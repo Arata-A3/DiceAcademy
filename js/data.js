@@ -1,20 +1,38 @@
 // ゲームの決まった値（数値は仮。遊んで調整する）
 
-// 能力 12 個。pct は割合の能力（% で表示し、上限あり）
+// 能力 16 個
+// pct: 割合の能力（% で表示。100% まで。overflow があれば、超えた分をその能力に移す。無ければ超えた分も持ち続ける）
+// それ以外は上限のない定数の能力。ranks は段階 D・C・B・A・S に届く値（目安）
+// init / favor / grade: 入学時の値・希望の職業で上乗せされる値・学年が 1 つ上がるごとに足される値（生徒を作るとき）
+// score: 総合や適性で比べるときの重み（base を引いてから掛ける）
+const BIG_RANKS = [60, 100, 150, 220, 320];
 const STATS = [
-    { key: 'hp', name: '体力', short: '体', max: 999 },
-    { key: 'mp', name: 'マナ', short: 'マ', max: 999 },
-    { key: 'atk', name: '攻撃力', short: '攻', max: 999 },
-    { key: 'mag', name: '魔力', short: '魔', max: 999 },
-    { key: 'def', name: '物理防御', short: '防', max: 999 },
-    { key: 'mdef', name: '魔法防御', short: '魔防', max: 999 },
-    { key: 'aspd', name: '攻撃速度', short: '速', max: 999 },
-    { key: 'mspd', name: '移動速度', short: '移', max: 999 },
-    { key: 'crit', name: 'クリティカル率', short: '会', max: 100, pct: true },
-    { key: 'haste', name: 'スキルヘイスト', short: 'ヘ', max: 999 },
-    { key: 'pen', name: '防御貫通', short: '貫', max: 40, pct: true },
-    { key: 'ten', name: '行動妨害耐性', short: '耐', max: 50, pct: true },
+    { key: 'hp', name: '体力', ranks: BIG_RANKS },
+    { key: 'mp', name: 'マナ', ranks: BIG_RANKS },
+    { key: 'atk', name: '攻撃力', ranks: BIG_RANKS },
+    { key: 'mag', name: '魔力', ranks: BIG_RANKS },
+    { key: 'def', name: '物理防御', ranks: BIG_RANKS },
+    { key: 'mdef', name: '魔法防御', ranks: BIG_RANKS },
+    { key: 'aspd', name: '攻撃速度', ranks: BIG_RANKS },
+    { key: 'mspd', name: '移動速度', ranks: BIG_RANKS },
+    { key: 'haste', name: 'スキルヘイスト', ranks: BIG_RANKS },
+    { key: 'crit', name: 'クリティカル率', pct: true, overflow: { to: 'critdmg', rate: 1 }, init: [3, 8], favor: [2, 5], grade: [1, 3], score: { w: 8 } },
+    { key: 'critdmg', name: 'クリティカルダメージ倍率', unit: '%', ranks: [160, 175, 195, 220, 260], init: [150, 155], favor: [5, 10], grade: [3, 6], score: { base: 140, w: 3 } },
+    { key: 'ppen', name: '物理防御貫通率', pct: true, init: [0, 3], favor: [2, 5], grade: [1, 3], score: { w: 20 } },
+    { key: 'mpen', name: '魔法防御貫通率', pct: true, init: [0, 3], favor: [2, 5], grade: [1, 3], score: { w: 20 } },
+    { key: 'plet', name: '物理防御貫通力', ranks: [6, 12, 22, 36, 55], init: [0, 4], favor: [3, 6], grade: [2, 4], score: { w: 8 } },
+    { key: 'mlet', name: '魔法防御貫通力', ranks: [6, 12, 22, 36, 55], init: [0, 4], favor: [3, 6], grade: [2, 4], score: { w: 8 } },
+    { key: 'ten', name: '行動妨害耐性', pct: true, overflow: { to: 'mdef', rate: 3 }, init: [0, 3], favor: [2, 5], grade: [1, 3], score: { w: 16 } },
 ];
+STATS.forEach(st => {
+    st.init = st.init || [20, 45]; st.favor = st.favor || [10, 20]; st.grade = st.grade || [25, 45];
+    st.score = Object.assign({ base: 0, w: 1 }, st.score);
+});
+const RANK_NAMES = ['E', 'D', 'C', 'B', 'A', 'S'];
+// 貫通率が 100% を超えた分: 超えた 1% ごとに、その種類の攻撃のダメージ +PEN_OVER_RATE %
+const PEN_OVER_RATE = 1;
+// 貫通力が防御を引き切って余った分: 余り 1 ごとにダメージ +LET_OVER_RATE %
+const LET_OVER_RATE = 0.5;
 const STAT_BY_KEY = Object.fromEntries(STATS.map(s => [s.key, s]));
 
 // 職業 6 つ。favor: 決まるときに見る能力（入学時の能力の偏りにも使う）
@@ -23,14 +41,13 @@ const JOBS = [
     { key: 'knight', name: '騎士', favor: ['def', 'mdef', 'hp'] },
     { key: 'mage', name: '魔法使い', favor: ['mag', 'mp', 'haste'] },
     { key: 'priest', name: '僧侶', favor: ['mag', 'mdef', 'mp'] },
-    { key: 'hunter', name: '狩人', favor: ['aspd', 'crit'] },
-    { key: 'thief', name: '盗賊', favor: ['mspd', 'pen', 'crit'] },
+    { key: 'hunter', name: '狩人', favor: ['aspd', 'crit', 'critdmg'] },
+    { key: 'thief', name: '盗賊', favor: ['mspd', 'ppen', 'plet'] },
 ];
 const JOB_BY_KEY = Object.fromEntries(JOBS.map(j => [j.key, j]));
 // 職業の適性: その職業で見る能力が、生徒自身の能力の平均の何 % か（100 がふつう）
-// 割合の能力は、ほかの能力と同じくらいの大きさになるよう掛けてから比べる
-const APT_SCALE = { crit: 8, pen: 20, ten: 16 };
-const APT_LINE = 110;            // 卒業のとき、適性がこれ以上の職業から選べる
+// 能力ごとの大きさの違いは、STATS の score でならしてから比べる
+const APT_LINE = 115;            // 卒業のとき、適性がこれ以上の職業から選べる
 
 // 練習の種類。gains: 能力ごとの基本の伸び
 const PRACTICES = [
@@ -41,8 +58,8 @@ const PRACTICES = [
     { key: 'run', name: '走り込み', gains: { hp: 6, mspd: 3 } },
     { key: 'study', name: '座学', gains: { haste: 5, mp: 3 } },
     { key: 'swing', name: '素振り', gains: { aspd: 5, atk: 2 } },
-    { key: 'vital', name: '急所を狙う練習', gains: { crit: 2, atk: 2 } },
-    { key: 'spar', name: '実戦形式', gains: { pen: 1, atk: 3, mag: 3 } },
+    { key: 'vital', name: '急所を狙う練習', gains: { crit: 2, critdmg: 3, atk: 1 } },
+    { key: 'spar', name: '実戦形式', gains: { ppen: 1, mpen: 1, plet: 1.5, mlet: 1.5 } },
     { key: 'mind', name: '精神修行', gains: { ten: 1.5, mdef: 3 } },
 ];
 const PRACTICE_BY_KEY = Object.fromEntries(PRACTICES.map(p => [p.key, p]));

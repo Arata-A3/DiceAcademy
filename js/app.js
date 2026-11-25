@@ -2,7 +2,7 @@
 'use strict';
 
 const SAVE_KEY = 'diceacademy_save';
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
 const BASE_YEAR = 2026;          // 暦の曜日を決めるための年（画面には出さない）
 const DAYS_IN_YEAR = 365;
 const STRIP_DAYS = 21;           // 暦の帯に出す日数
@@ -66,14 +66,12 @@ function makeStudent(grade, usedNames) {
     const name = pick(NAMES.filter(n => !usedNames.has(n))) || pick(NAMES);
     usedNames.add(name);
     const stats = {};
-    STATS.forEach(st => {
-        if (st.pct) stats[st.key] = st.key === 'crit' ? rand(3, 8) : rand(0, 3);
-        else stats[st.key] = rand(20, 45);
-    });
-    job.favor.forEach(k => { const st = STAT_BY_KEY[k]; stats[k] = st.pct ? stats[k] + rand(2, 5) : stats[k] + rand(10, 20); });
+    STATS.forEach(st => { stats[st.key] = rand(...st.init); });
+    job.favor.forEach(k => { stats[k] += rand(...STAT_BY_KEY[k].favor); });
     // 学年が上の生徒は、すでにある程度育っている
-    for (let g = 1; g < grade; g++) STATS.forEach(st => { stats[st.key] += st.pct ? rand(1, 3) : rand(25, 45); });
-    STATS.forEach(st => { stats[st.key] = clamp(stats[st.key], 0, st.max); });
+    for (let g = 1; g < grade; g++) STATS.forEach(st => { stats[st.key] += rand(...st.grade); });
+    const s = { stats };
+    STATS.forEach(st => fixOverflow(s, st.key));
     const talent = shuffle([...job.favor, ...STATS.map(s => s.key)]).filter((k, i, a) => a.indexOf(k) === i).slice(0, 2);
     const skills = grade >= 2 ? [SKILL_LINES[JOB_LINE[job.key]][0]] : [];
     return { id: game.nextId++, name, grade, hope: job.key, talent, stats, fatigue: rand(0, 15), mood: rand(50, 70), injuredUntil: -1, wins: 0, skills, skillProg: {} };
@@ -81,15 +79,63 @@ function makeStudent(grade, usedNames) {
 function usedNameSet() { return new Set(game.students.map(s => s.name)); }
 function isInjured(s) { return s.injuredUntil >= game.day; }
 function randomStat() { return pick(STATS).key; }
-function addStat(s, key, amount) {
+function roundStat(key, v) { return STAT_BY_KEY[key].pct ? Math.round(v * 10) / 10 : Math.round(v); }
+// 割合の能力が 100% を超えたら、超えた分を決まった能力に移す（移す先が無い能力は超えたまま持つ）
+function fixOverflow(s, key) {
     const st = STAT_BY_KEY[key];
-    const v = s.stats[key] + amount;
-    s.stats[key] = st.pct ? clamp(Math.round(v * 10) / 10, 0, st.max) : clamp(Math.round(v), 0, st.max);
+    s.stats[key] = Math.max(0, roundStat(key, s.stats[key]));
+    if (st.pct && st.overflow && s.stats[key] > 100) {
+        const over = s.stats[key] - 100;
+        s.stats[key] = 100;
+        s.stats[st.overflow.to] = roundStat(st.overflow.to, s.stats[st.overflow.to] + over * st.overflow.rate);
+    }
+}
+function addStat(s, key, amount) {
+    s.stats[key] += amount;
+    fixOverflow(s, key);
+}
+// 能力の変化（前の写しと比べて増えた分）
+function statDiff(before, s) {
+    const res = {};
+    STATS.forEach(st => { const d = roundStat(st.key, s.stats[st.key] - before[st.key]); if (d > 0) res[st.key] = d; });
+    return res;
+}
+function fmtDiff(res) { return Object.entries(res).map(([k, v]) => `${STAT_BY_KEY[k].name} +${STAT_BY_KEY[k].pct ? v.toFixed(1) : v}`).join('、'); }
+// 段階（E〜S）。割合の能力には付けない
+function statRank(key, v) {
+    const st = STAT_BY_KEY[key];
+    if (!st.ranks) return null;
+    let i = 0; while (i < st.ranks.length && v >= st.ranks[i]) i++;
+    return i;
+}
+// 能力の棒の長さ（0〜100）。割合の能力は 100% で満タン、定数の能力は今の段階の中での進み具合
+function statBar(key, v) {
+    const st = STAT_BY_KEY[key];
+    if (st.pct) return clamp(v, 0, 100);
+    const r = statRank(key, v);
+    if (r >= st.ranks.length) return 100;
+    const lo = r === 0 ? 0 : st.ranks[r - 1], hi = st.ranks[r];
+    return clamp((v - lo) / (hi - lo) * 100, 0, 100);
+}
+// 足りない能力を埋める（古いセーブ・古い戦いの相手）
+function fillStats(stats) {
+    if (stats.pen !== undefined) {
+        if (stats.ppen === undefined) stats.ppen = stats.pen;
+        if (stats.mpen === undefined) stats.mpen = stats.pen;
+        delete stats.pen;
+    }
+    if (stats.critdmg === undefined) stats.critdmg = 150;
+    STATS.forEach(st => { if (typeof stats[st.key] !== 'number' || !isFinite(stats[st.key])) stats[st.key] = 0; });
+    return stats;
 }
 // 練習の種類 line で次に覚える技（全部覚えていたら null）
 function nextSkill(s, line) { return SKILL_LINES[line].find(id => !s.skills.includes(id)) || null; }
 const SKILL_NEED = 100;
-function fmtStat(key, v) { return STAT_BY_KEY[key].pct ? `${v.toFixed(1)}%` : String(v); }
+function fmtStat(key, v) {
+    const st = STAT_BY_KEY[key];
+    if (st.pct) return v > 100 ? `100%（+${(v - 100).toFixed(1)}%）` : `${v.toFixed(1)}%`;
+    return `${v}${st.unit || ''}`;
+}
 function normalizeStudent(s) {
     if (!Array.isArray(s.skills)) s.skills = [];
     if (!s.skillProg || typeof s.skillProg !== 'object') s.skillProg = {};
@@ -98,7 +144,7 @@ function normalizeStudent(s) {
 }
 // 職業の適性（100 がふつう。APT_LINE 以上なら卒業のときに選べる）
 function aptitude(s, job) {
-    const v = k => s.stats[k] * (APT_SCALE[k] || 1);
+    const v = k => statScore(k, s.stats[k]);
     const fav = job.favor.reduce((a, k) => a + v(k), 0) / job.favor.length;
     const all = STATS.reduce((a, st) => a + v(st.key), 0) / STATS.length;
     return all > 0 ? Math.round(fav / all * 100) : 100;
@@ -116,8 +162,10 @@ function aptRows(s) {
         return `<div class="apt ${a >= APT_LINE ? 'can' : ''}"><span>${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}</span><span class="bar"><i style="width:${pos(a)}%"></i><b class="apt-line" style="left:${pos(APT_LINE)}%"></b></span><b>${a}</b></div>`;
     }).join('')}</div>`;
 }
+// 能力ごとの大きさの違いをならした値（総合と適性に使う）
+function statScore(key, v) { const sc = STAT_BY_KEY[key].score; return Math.max(0, v - sc.base) * sc.w; }
 function power(s, weights = {}) {
-    return STATS.reduce((a, st) => a + (st.pct ? s.stats[st.key] * 8 : s.stats[st.key]) * (weights[st.key] || 1), 0);
+    return STATS.reduce((a, st) => a + statScore(st.key, s.stats[st.key]) * (weights[st.key] || 1), 0);
 }
 
 // ---------- 盤 ----------
@@ -332,18 +380,15 @@ function resolveSquare(mul) {
 
 function practiceGain(s, sub, coached, mul) {
     const p = PRACTICE_BY_KEY[sub];
-    const res = {};
+    const before = { ...s.stats };
     const moodMul = 0.6 + s.mood / 100 * 0.8;
     const fatigueMul = s.fatigue > 80 ? 0.6 : 1;
     Object.entries(p.gains).forEach(([k, base]) => {
         const talentMul = s.talent.includes(k) ? 1.5 : 1;
         const v = base * talentMul * moodMul * fatigueMul * (coached ? 1 : 0.25) * mul * (0.8 + Math.random() * 0.4);
-        const before = s.stats[k];
         addStat(s, k, v);
-        const diff = Math.round((s.stats[k] - before) * 10) / 10;
-        if (diff > 0) res[k] = diff;
     });
-    return res;
+    return statDiff(before, s);
 }
 function skillPractice(s, sub, mul) {
     const id = nextSkill(s, sub);
@@ -378,7 +423,7 @@ function doPractice(ids, mode) {
             s.injuredUntil = game.day + rand(3, 6);
             injuredMsg += ` ${s.name} は無理がたたってけがをした。`;
         }
-        if (coached) lines.push(`${s.name}: ${Object.entries(res).map(([k, v]) => `${STAT_BY_KEY[k].name} +${STAT_BY_KEY[k].pct ? v.toFixed(1) : v}`).join('、') || '伸びなかった'}`);
+        if (coached) lines.push(`${s.name}: ${fmtDiff(res) || '伸びなかった'}`);
     });
     game.pending = null;
     game.message = `${PRACTICE_BY_KEY[sub].name}。${lines.join(' / ')}${injuredMsg}`;
@@ -698,7 +743,8 @@ function runMatch() {
 function battleGrowth(s, win) {
     const keys = shuffle(['hp', 'atk', 'mag', 'def', 'mdef', 'aspd', 'mspd']).slice(0, 2);
     keys.forEach(k => addStat(s, k, rand(1, 3) + (win ? 1 : 0)));
-    if (Math.random() < 0.3) addStat(s, pick(['crit', 'pen', 'ten']), 0.5);
+    if (Math.random() < 0.3) addStat(s, pick(['crit', 'ppen', 'mpen', 'ten']), 0.5);
+    if (Math.random() < 0.3) addStat(s, pick(['critdmg', 'plet', 'mlet']), 1);
     return keys;
 }
 function afterMatch(r) {
@@ -845,8 +891,8 @@ function openStudent(id) {
     if (!s) return;
     const rows = STATS.map(st => {
         const v = s.stats[st.key];
-        const w = Math.min(100, v / st.max * 100);
-        return `<div class="srow ${s.talent.includes(st.key) ? 'talent' : ''}"><span>${st.name}${s.talent.includes(st.key) ? ' <small>得意</small>' : ''}</span><span class="bar"><i style="width:${w}%"></i></span><b>${fmtStat(st.key, v)}</b></div>`;
+        const r = statRank(st.key, v);
+        return `<div class="srow ${s.talent.includes(st.key) ? 'talent' : ''}"><span>${st.name}${s.talent.includes(st.key) ? ' <small>得意</small>' : ''}</span><span class="bar"><i style="width:${statBar(st.key, v)}%"></i></span><b>${fmtStat(st.key, v)}</b><span class="rank ${r === null ? '' : `r${r}`}">${r === null ? '' : RANK_NAMES[r]}</span></div>`;
     }).join('');
     showDialog({
         title: `${s.name}（${s.grade}年）`, wide: true,
@@ -927,6 +973,7 @@ function loadGame() {
         game.students.forEach(normalizeStudent);
         if ((p.saveVersion || 1) < 2) migrateTo2();
         if ((p.saveVersion || 1) < 3) migrateTo3();
+        if ((p.saveVersion || 1) < 4) migrateTo4();
         game.saveVersion = SAVE_VERSION;
         return true;
     } catch (err) {
@@ -951,6 +998,25 @@ function migrateTo3() {
     if (game.day >= gi || game.board.days.some(d => d.type === 'fixed' && d.key === 'graduation')) return;
     game.board.branches = game.board.branches.filter(b => !(gi >= b.start - 1 && gi <= b.start + b.len));
     game.board.days[gi] = { type: 'fixed', key: 'graduation' };
+}
+// v0.3 までのセーブ: 防御貫通を物理・魔法に分け、新しい能力を足す
+function migrateTo4() {
+    const grow = s => {
+        const had = s.stats.critdmg !== undefined;
+        fillStats(s.stats);
+        if (had) return;
+        const g = s.grade || 3;
+        ['critdmg', 'plet', 'mlet'].forEach(k => {
+            const st = STAT_BY_KEY[k];
+            let v = rand(...st.init);
+            for (let i = 1; i < g; i++) v += rand(...st.grade);
+            s.stats[k] = v;
+        });
+        STATS.forEach(st => fixOverflow(s, st.key));
+    };
+    game.students.forEach(grow);
+    game.alumni.forEach(grow);
+    if (game.pending && Array.isArray(game.pending.enemies)) game.pending.enemies.forEach(e => fillStats(e.stats));
 }
 function fullReset() {
     if (!confirm('今までのデータを消して、最初からやり直しますか？（元に戻せません）')) return;

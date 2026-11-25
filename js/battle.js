@@ -62,8 +62,10 @@ function statsFromWeights(level, w = {}) {
     STATS.forEach(s => {
         const k = w[s.key] !== undefined ? w[s.key] : 1;
         if (s.key === 'crit') st.crit = clamp(5 * k + level * 0.04, 0, 100);
-        else if (s.key === 'pen') st.pen = clamp(level * 0.04 * k, 0, 40);
-        else if (s.key === 'ten') st.ten = clamp(level * 0.05 * k, 0, 50);
+        else if (s.key === 'ppen' || s.key === 'mpen') st[s.key] = clamp(level * 0.04 * k, 0, 100);
+        else if (s.key === 'ten') st.ten = clamp(level * 0.05 * k, 0, 100);
+        else if (s.key === 'critdmg') st.critdmg = Math.round(150 + level * 0.08 * k);
+        else if (s.key === 'plet' || s.key === 'mlet') st[s.key] = Math.round(level * 0.04 * k);
         else st[s.key] = Math.round(level * k * (0.9 + Math.random() * 0.2));
     });
     return st;
@@ -170,12 +172,15 @@ function hitOnce(actor, target, sk) {
     if (Math.random() < dodge) { ev.miss = true; return ev; }
     let power = (magic ? actor.stats.mag : actor.stats.atk) * (sk ? sk.mult : 1);
     if (battle.mods) power *= magic ? (battle.mods.mag || 1) : (battle.mods.phys || 1);
-    const pen = clamp(actor.stats.pen + (sk && sk.pen ? sk.pen : 0), 0, 90) / 100;
+    // 防御 ×（1 − 貫通率）− 貫通力。貫通率の 100% を超えた分と、防御を引き切って余った貫通力は、ダメージを増やす
+    const penPct = Math.max(0, (magic ? actor.stats.mpen : actor.stats.ppen) + (sk && sk.pen ? sk.pen : 0));
+    const penFlat = Math.max(0, magic ? actor.stats.mlet : actor.stats.plet);
     let defense = (magic ? target.stats.mdef : target.stats.def) * (1 - buffVal(target, 'armorDown'));
-    defense *= (1 - pen);
-    let dmg = power * 100 / (100 + defense * 0.5);
+    defense = defense * (1 - Math.min(penPct, 100) / 100) - penFlat;
+    let dmg = defense >= 0 ? power * 100 / (100 + defense * 0.5) : power * (1 - defense * LET_OVER_RATE / 100);
+    if (penPct > 100) dmg *= 1 + (penPct - 100) * PEN_OVER_RATE / 100;
     const critRate = magic ? 0 : (sk && sk.crit ? 100 : actor.stats.crit + (sk && sk.critBonus ? sk.critBonus : 0));
-    if (Math.random() * 100 < critRate) { dmg *= 1.75; ev.crit = true; }
+    if (Math.random() * 100 < critRate) { dmg *= Math.max(100, actor.stats.critdmg) / 100; ev.crit = true; }
     dmg *= 1 - clamp(buffVal(target, 'guard'), 0, 0.8);
     dmg *= 0.9 + Math.random() * 0.2;
     dmg = Math.max(1, Math.round(dmg));
@@ -187,7 +192,7 @@ function hitOnce(actor, target, sk) {
     }
     if (target.hp <= 0) { target.hp = 0; ev.down = true; }
     else if (sk && sk.stun) {
-        const turns = Math.round(sk.stun * (1 - target.stats.ten / 100));
+        const turns = Math.round(sk.stun * (1 - clamp(target.stats.ten, 0, 100) / 100));
         if (turns > 0) { target.stunned = Math.max(target.stunned, turns); ev.stun = turns; }
     }
     return ev;

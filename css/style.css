@@ -155,8 +155,12 @@ dialog p { margin: 6px 0; line-height: 1.6; }
 .shop-item .price { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-weight: bold; display: inline-flex; gap: 3px; align-items: center; }
 .shop-item .price .ico { color: var(--gold); }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; }
-.srow { display: grid; grid-template-columns: 7.5em 1fr 3.6em; align-items: center; gap: 6px; font-size: 13px; }
-.srow b { text-align: right; font-variant-numeric: tabular-nums; }
+.srow { display: grid; grid-template-columns: 9.5em 1fr minmax(3.4em, auto) 1.3em; align-items: center; gap: 6px; font-size: 13px; }
+.srow > span:first-child { line-height: 1.2; }
+.srow b { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rank { font-weight: bold; text-align: center; font-size: 12px; border-radius: 4px; }
+.rank.r0 { color: var(--muted); } .rank.r1 { color: #8a8f98; } .rank.r2 { color: #4f9a5b; }
+.rank.r3 { color: #3f7fd0; } .rank.r4 { color: #c0602e; } .rank.r5 { color: #fff; background: #c9952b; }
 .srow small { color: var(--accent); }
 .apts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 6px 0; }
 .apt { display: grid; grid-template-columns: 7.5em 1fr 3em; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
