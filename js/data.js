@@ -75,8 +75,8 @@ const COACH_MIN = 1;
 // 名声: 生徒ごとの在学中の実績（整数）
 // 大会の試合に勝つと win、優勝すると title をさらに足す。団体戦は team 倍。小さな戦いに勝つと small
 const RENOWN = { win: 5, title: 15, team: 2, small: 1 };
-// 英傑録に載る名声と、勇者になる「名声 ＋ 総合力」
-const ROSTER_RENOWN = 120;
+// 英傑録に載る「名声 ＋ 総合力」と、勇者になる「名声 ＋ 総合力」
+const ROSTER_SUM = 300;
 const HERO_SUM = 400;
 // 英傑録に載った人の職業の名前
 const ELITE_NAMES = { warrior: '剣聖', knight: '聖騎士', mage: '大魔法士', priest: '大司教', hunter: '天弓', thief: '密偵', villager: '村の英雄' };

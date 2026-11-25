@@ -91,7 +91,7 @@ function coachMul() { return 1 + Math.min(COACH_FAME_MAX, game.fame * COACH_FAME
 // 英傑録・勇者の判定
 function renownTier(renown, pw) {
     if (renown + pw >= HERO_SUM) return 'hero';
-    if (renown >= ROSTER_RENOWN) return 'elite';
+    if (renown + pw >= ROSTER_SUM) return 'elite';
     return null;
 }
 function jobTitle(a) {
@@ -107,7 +107,7 @@ function renownLine(s) {
     const sum = Math.round((s.renown || 0) + power(s));
     const next = t === 'hero' ? `勇者になれる（名声 ＋ 総合力 = ${sum} / ${HERO_SUM}）`
         : t === 'elite' ? `英傑録に載る。勇者には名声 ＋ 総合力が ${HERO_SUM} 以上（今 ${sum}）`
-            : `英傑録には名声 ${ROSTER_RENOWN} 以上。勇者には名声 ＋ 総合力が ${HERO_SUM} 以上（今 ${sum}）`;
+            : `英傑録には名声 ＋ 総合力が ${ROSTER_SUM} 以上、勇者には ${HERO_SUM} 以上（今 ${sum}）`;
     return `名声 <b>${fmtRenown(s.renown || 0)}</b> <small class="muted">（${next}）</small>`;
 }
 function usedNameSet() { return new Set(game.students.map(s => s.name)); }
@@ -1011,7 +1011,7 @@ function finishGraduation() {
     const list = p.done.map(d => `<li><b>${esc(d.name)}</b>　${jobTitle(d)}${d.tier ? `（${JOB_BY_KEY[d.job].name}）` : ''}${d.job === d.hope ? '・希望どおり' : `・希望は ${JOB_BY_KEY[d.hope].name}`}${tierNote(d)}</li>`).join('');
     game.message = `卒業式。${p.done.map(d => `${d.name}（${jobTitle(d)}）`).join('、')} が卒業した。`;
     const after = p.then ? { kind: p.then } : null;
-    game.pending = { kind: 'notice', title: '卒業式', html: `<p>${p.done.length} 人が卒業していった。</p><ul class="plain">${list}</ul><p class="muted">卒業生は「歴史」で見られる。名声が高い卒業生は英傑録に載る。</p>`, nextPending: after };
+    game.pending = { kind: 'notice', title: '卒業式', html: `<p>${p.done.length} 人が卒業していった。</p><ul class="plain">${list}</ul><p class="muted">卒業生は「歴史」で見られる。名声 ＋ 総合力が ${ROSTER_SUM} 以上の卒業生は英傑録に載る。</p>`, nextPending: after };
     if (p.firstHero) {
         const a = game.alumni.find(x => x.id === game.firstHero.id);
         game.pending.nextPending = {
@@ -1069,12 +1069,12 @@ function openAlumni(tab = 'roster') {
             <span class="ros-mark">${icon(a.tier === 'hero' ? 'crown' : 'star')}</span>
             <span class="ros-main"><b>${esc(a.name)}</b> <span class="ros-title">${jobTitle(a)}</span>${a.tier === 'hero' ? `<small>（${JOB_BY_KEY[a.job].name}）</small>` : ''}<br>
             <small>${a.year}年目に卒業・名声 ${fmtRenown(a.renown)}・卒業時の総合力 ${a.power}（${RANK_NAMES[a.rank || 0]}）・今の総合力 ${Math.round(power(a))}・優勝 ${a.titles || 0} 回・助っ人 ${a.helped || 0} 回${isRetired(a) ? '・引退' : ''}</small></span></div>`).join('')}</div>`
-        : `<p class="muted">まだ誰も載っていない。在学中に名声 ${ROSTER_RENOWN} 以上を集めて卒業すると載る。</p>`;
+        : `<p class="muted">まだ誰も載っていない。名声 ＋ 総合力が ${ROSTER_SUM} 以上で卒業すると載る。</p>`;
     const seg = (k, l) => `<button class="seg ${tab === k ? 'on' : ''}" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`;
     showDialog({
         title: '学園の歴史', wide: true,
         body: `<div class="segs">${seg('roster', '英傑録')}${seg('years', '年ごとの記録')}</div><div class="hist-body">${tab === 'roster'
-            ? `<p class="muted">名声の高い卒業生が載り、職業は上位の名で呼ばれる（${JOBS.map(j => `${j.name} → ${ELITE_NAMES[j.key]}`).join('、')}、村人 → ${ELITE_NAMES.villager}）。名声 ＋ 総合力が ${HERO_SUM} 以上で卒業すると勇者になる。英傑録の卒業生は、魔物討伐の助っ人に呼べる（卒業から ${HELPER_RETIRE} 年で引退）。</p>${roster}`
+            ? `<p class="muted">名声 ＋ 総合力が ${ROSTER_SUM} 以上の卒業生が載り、職業は上位の名で呼ばれる（${JOBS.map(j => `${j.name} → ${ELITE_NAMES[j.key]}`).join('、')}、村人 → ${ELITE_NAMES.villager}）。名声 ＋ 総合力が ${HERO_SUM} 以上で卒業すると勇者になる。英傑録の卒業生は、魔物討伐の助っ人に呼べる（卒業から ${HELPER_RETIRE} 年で引退）。</p>${roster}`
             : yearly}</div>`,
         onOpen: () => ui.dlgBody.querySelectorAll('.seg[data-tab]').forEach(el => el.addEventListener('click', () => openAlumni(el.dataset.tab))),
     });
