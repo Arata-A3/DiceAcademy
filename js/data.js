@@ -51,16 +51,17 @@ const SQUARES = {
     shop: { name: '買い物', color: 'var(--sq-shop)', icon: 'bag' },
     treasure: { name: '宝', color: 'var(--sq-treasure)', icon: 'chest' },
     injury: { name: 'けが', color: 'var(--sq-injury)', icon: 'bandage' },
+    battle: { name: '戦い', color: 'var(--sq-battle)', icon: 'swords' },
     fixed: { name: '行事', color: 'var(--sq-fixed)', icon: 'flag' },
 };
 
 // ふつうの日のマスの出やすさ
-const SQUARE_WEIGHTS = { practice: 46, rest: 16, event: 16, shop: 8, treasure: 7, injury: 7 };
+const SQUARE_WEIGHTS = { practice: 42, rest: 15, event: 14, shop: 7, treasure: 6, injury: 6, battle: 10 };
 // 分かれ道の道ごとの出やすさ
 const ROUTES = {
     training: { name: '訓練場の道', weights: { practice: 75, rest: 15, injury: 10 } },
     town: { name: '町の道', weights: { shop: 35, event: 40, rest: 20, treasure: 5 } },
-    forest: { name: '森の道', weights: { treasure: 40, event: 20, injury: 25, practice: 15 } },
+    forest: { name: '森の道', weights: { treasure: 35, battle: 30, event: 10, injury: 15, practice: 10 } },
 };
 
 // 決まった日の行事（月, 日）

@@ -15,7 +15,7 @@
 <meta property="og:locale" content="ja_JP">
 <meta name="twitter:card" content="summary">
 <script>try { const a = JSON.parse(localStorage.getItem('diceacademy_save') || '{}').appearance; if (a === 'light' || a === 'dark') document.documentElement.dataset.theme = a; } catch (e) { }</script>
-<link rel="stylesheet" href="css/style.css?v=0.1">
+<link rel="stylesheet" href="css/style.css?v=0.2">
 </head>
 <body>
 <div id="app">
@@ -54,6 +54,16 @@
   </footer>
 </div>
 
+<section id="battle" class="battle" hidden>
+  <div class="b-top"><span id="b-title" class="b-title"></span>
+    <span class="b-speeds"><button class="btn spd" data-spd="normal">ふつう</button><button class="btn spd" data-spd="fast">早送り</button><button class="btn spd" data-spd="skip">結果だけ</button></span></div>
+  <div class="b-order-row"><span class="b-order-l">次に動く順</span><div id="b-order" class="b-order"></div></div>
+  <div class="b-field"><div id="b-allies" class="b-side"></div><div id="b-enemies" class="b-side foes"></div></div>
+  <div id="b-log" class="b-log" aria-live="polite"></div>
+  <div id="b-trump" class="b-trump"></div>
+  <div id="b-result" class="b-result" hidden></div>
+</section>
+
 <dialog id="dlg">
   <h2 id="dlgTitle"></h2>
   <div id="dlgBody"></div>
@@ -61,8 +71,9 @@
 </dialog>
 <div id="toast" class="toast" role="status"></div>
 
-<script src="js/version.js?v=0.1"></script>
-<script src="js/data.js?v=0.1"></script>
-<script src="js/app.js?v=0.1"></script>
+<script src="js/version.js?v=0.2"></script>
+<script src="js/data.js?v=0.2"></script>
+<script src="js/battle.js?v=0.2"></script>
+<script src="js/app.js?v=0.2"></script>
 </body>
 </html>

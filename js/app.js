@@ -2,7 +2,7 @@
 'use strict';
 
 const SAVE_KEY = 'diceacademy_save';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 const BASE_YEAR = 2026;          // 暦の曜日を決めるための年（画面には出さない）
 const DAYS_IN_YEAR = 365;
 const STRIP_DAYS = 21;           // 暦の帯に出す日数
@@ -51,6 +51,7 @@ const ICON_PATHS = {
     fork: '<path d="M6 3v6a6 6 0 0 0 6 6h0a6 6 0 0 0 6-6V3"/><path d="M12 15v6"/>',
     arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
+    swords: '<path d="M4 4l9 9M4 4v3M4 4h3"/><path d="M20 4l-9 9M20 4v3M20 4h-3"/><path d="M9 15l-4 4M15 15l4 4M7 13l4 4M17 13l-4 4"/>',
     piece: '<circle cx="12" cy="7" r="4"/><path d="M6 21l2-9h8l2 9z"/>',
 };
 function icon(name, cls = '') {
@@ -72,7 +73,8 @@ function makeStudent(grade, usedNames) {
     for (let g = 1; g < grade; g++) STATS.forEach(st => { stats[st.key] += st.pct ? rand(1, 3) : rand(25, 45); });
     STATS.forEach(st => { stats[st.key] = clamp(stats[st.key], 0, st.max); });
     const talent = shuffle([...job.favor, ...STATS.map(s => s.key)]).filter((k, i, a) => a.indexOf(k) === i).slice(0, 2);
-    return { id: game.nextId++, name, grade, hope: job.key, talent, stats, fatigue: rand(0, 15), mood: rand(50, 70), injuredUntil: -1, wins: 0 };
+    const skills = grade >= 2 ? [SKILL_LINES[JOB_LINE[job.key]][0]] : [];
+    return { id: game.nextId++, name, grade, hope: job.key, talent, stats, fatigue: rand(0, 15), mood: rand(50, 70), injuredUntil: -1, wins: 0, skills, skillProg: {} };
 }
 function usedNameSet() { return new Set(game.students.map(s => s.name)); }
 function isInjured(s) { return s.injuredUntil >= game.day; }
@@ -82,8 +84,13 @@ function addStat(s, key, amount) {
     const v = s.stats[key] + amount;
     s.stats[key] = st.pct ? clamp(Math.round(v * 10) / 10, 0, st.max) : clamp(Math.round(v), 0, st.max);
 }
+// 練習の種類 line で次に覚える技（全部覚えていたら null）
+function nextSkill(s, line) { return SKILL_LINES[line].find(id => !s.skills.includes(id)) || null; }
+const SKILL_NEED = 100;
 function fmtStat(key, v) { return STAT_BY_KEY[key].pct ? `${v.toFixed(1)}%` : String(v); }
 function normalizeStudent(s) {
+    if (!Array.isArray(s.skills)) s.skills = [];
+    if (!s.skillProg || typeof s.skillProg !== 'object') s.skillProg = {};
     s.fatigue = clamp(Math.round(s.fatigue), 0, 100);
     s.mood = clamp(Math.round(s.mood), 0, 100);
 }
@@ -166,7 +173,7 @@ function makeDefaultGame() {
         saveVersion: SAVE_VERSION, appearance: 'auto',
         year: 1, day: 0, fame: 50, gold: 100,
         board: null, hand: [], specials: [], students: [], nextId: 1,
-        message: '', pending: null, lastVersion: APP_VERSION,
+        message: '', pending: null, lastVersion: APP_VERSION, lastParty: [], lastTactic: 'balance', lastMode: 'stat',
     };
 }
 function newGame() {
@@ -294,6 +301,7 @@ function resolveSquare(mul) {
             game.message = `${s.name} が練習中にけがをした。${days} 日のあいだ練習できない。${careful}`;
             break;
         }
+        case 'battle': game.pending = { kind: 'battle', mode: 'small' }; break;
         case 'fixed': resolveFixed(sq.key); break;
     }
     saveGame();
@@ -315,13 +323,31 @@ function practiceGain(s, sub, coached, mul) {
     });
     return res;
 }
-function doPractice(ids) {
+function skillPractice(s, sub, mul) {
+    const id = nextSkill(s, sub);
+    if (!id) return null;
+    const p = PRACTICE_BY_KEY[sub];
+    const talentMul = Object.keys(p.gains).some(k => s.talent.includes(k)) ? 1.3 : 1;
+    const moodMul = 0.6 + s.mood / 100 * 0.8;
+    const gain = Math.round(34 * talentMul * moodMul * mul * (0.85 + Math.random() * 0.3));
+    s.skillProg[sub] = (s.skillProg[sub] || 0) + gain;
+    if (s.skillProg[sub] >= SKILL_NEED) { s.skillProg[sub] = 0; s.skills.push(id); return `技「${SKILLS[id].name}」を覚えた！`; }
+    return `技「${SKILLS[id].name}」の練習 ${Math.min(99, Math.round(s.skillProg[sub]))}%`;
+}
+function doPractice(ids, mode) {
     const { sub, mul } = game.pending;
     const lines = [];
     let injuredMsg = '';
+    game.lastMode = mode;
     game.students.forEach(s => {
         if (isInjured(s)) return;
         const coached = ids.includes(s.id);
+        if (coached && mode === 'skill' && nextSkill(s, sub)) {
+            const msg = skillPractice(s, sub, mul);
+            s.fatigue += 15 * mul; s.mood += 3; normalizeStudent(s);
+            lines.push(`${s.name}: ${msg}`);
+            return;
+        }
         const res = practiceGain(s, sub, coached, mul);
         s.fatigue += coached ? 15 * mul : 3;
         s.mood += coached ? 3 : 0;
@@ -347,48 +373,12 @@ function resolveFixed(key) {
         game.pending = { kind: 'notice', title: '入学式', html: `<p>${n} 人の新入生が入ってきた。</p><ul class="plain">${added.map(s => `<li><b>${esc(s.name)}</b>　希望: ${JOB_BY_KEY[s.hope].name}　得意: ${s.talent.map(k => STAT_BY_KEY[k].name).join('・')}</li>`).join('')}</ul>` };
         game.message = `入学式。${n} 人の新入生が入ってきた。`;
     } else if (info.tournament) {
-        runTournament(info);
+        game.pending = { kind: 'battle', mode: 'tournament', key, round: 0 };
+        game.message = `${info.name}の日。`;
     } else if (key === 'yearend') {
         game.pending = { kind: 'yearend' };
         game.message = '修了式。1 年が終わった。';
     }
-}
-
-// 大会（仮の判定）: 能力の合計に揺らぎを足して比べる。戦いは次の版から
-function runTournament(info) {
-    let team;
-    let weights = {};
-    if (info.key === 'rookie') team = game.students.filter(s => s.grade === 1 && !isInjured(s)).sort((a, b) => power(b) - power(a)).slice(0, 1);
-    else if (info.key === 'sword') { weights = { atk: 2, def: 1.5, aspd: 1.5, mag: 0.3 }; team = game.students.filter(s => !isInjured(s)).sort((a, b) => power(b, weights) - power(a, weights)).slice(0, 1); }
-    else team = game.students.filter(s => !isInjured(s)).sort((a, b) => power(b) - power(a)).slice(0, 4);
-    if (!team.length) {
-        game.pending = { kind: 'notice', title: info.name, html: '<p>出られる生徒がいなかった。</p>' };
-        game.message = `${info.name}。出られる生徒がいなかった。`;
-        return;
-    }
-    const mine = team.reduce((a, s) => a + power(s, weights), 0) / team.length;
-    const base = 520 + game.day * 1.1 + (info.key === 'rookie' ? -120 : 0);
-    const roundNames = ['1 回戦', '準々決勝', '準決勝', '決勝'];
-    const rows = [];
-    let wins = 0;
-    for (let r = 0; r < roundNames.length; r++) {
-        const opp = base * (1 + r * 0.08) * (0.85 + Math.random() * 0.3);
-        const me = mine * (0.85 + Math.random() * 0.3);
-        const win = me > opp;
-        rows.push(`<li>${roundNames[r]}: ${win ? '勝ち' : '負け'}</li>`);
-        if (!win) break;
-        wins++;
-    }
-    const result = wins === 4 ? '優勝' : wins === 3 ? '準優勝' : wins === 2 ? 'ベスト 4' : wins === 1 ? 'ベスト 8' : '1 回戦負け';
-    const fame = wins * 6 + (wins === 4 ? 20 : 0);
-    const gold = wins * 20 + (wins === 4 ? 100 : 0);
-    game.fame += fame; game.gold += gold;
-    team.forEach(s => { s.wins += wins; s.fatigue += 20; s.mood += wins >= 2 ? 10 : -5; normalizeStudent(s); });
-    game.pending = {
-        kind: 'notice', title: `${info.name}（${info.desc}）`,
-        html: `<p>出場: ${team.map(s => esc(s.name)).join('、')}</p><ul class="plain">${rows.join('')}</ul><p class="big">${result}</p><p>知名度 +${fame}　${gold} ゴールド</p><p class="muted">今は能力の合計で結果を決める仮の判定です。戦いは次の版から見られます。</p>`,
-    };
-    game.message = `${info.name}: ${result}。`;
 }
 
 // ---------- 画面 ----------
@@ -499,30 +489,46 @@ function showDialog({ title, body, buttons = [{ label: '閉じる' }], onOpen, w
     dialogOpen = true;
     if (!ui.dlg.open) ui.dlg.showModal();
     if (onOpen) onOpen();
+    // 最初の選択肢に焦点が当たって選択の色が隠れないよう、主のボタンに焦点を置く
+    const main = ui.dlgButtons.querySelector('.primary') || ui.dlgButtons.querySelector('button');
+    if (main) main.focus();
 }
 function closeDialog() { dialogOpen = false; if (ui.dlg.open) ui.dlg.close(); }
 
 function openPending() {
     const p = game.pending;
-    if (!p || dialogOpen) return;
+    if (!p || dialogOpen || battle) return;
     if (p.kind === 'practice') openPractice();
     else if (p.kind === 'event') openEvent();
     else if (p.kind === 'shop') openShop();
     else if (p.kind === 'notice') showDialog({ title: p.title, body: p.html, buttons: [{ label: 'OK', primary: true, onClick: () => { game.pending = null; saveGame(); render(); } }] });
     else if (p.kind === 'yearend') openYearEnd();
+    else if (p.kind === 'battle') openFormation();
 }
 function openPractice() {
     const { sub, mul } = game.pending;
     const p = PRACTICE_BY_KEY[sub];
     const avail = game.students.filter(s => !isInjured(s));
     const chosen = new Set();
-    const body = `<p>練習: <b>${esc(p.name)}</b>（${Object.keys(p.gains).map(k => STAT_BY_KEY[k].name).join('・')}が伸びる）${mul > 1 ? '　<b>じっくり: 効果 2 倍</b>' : ''}</p>
-        <p class="muted">指導する生徒を 2 人まで選んでください。選ばれなかった生徒も少しだけ伸びます。</p>
-        <div class="pick">${avail.map(s => `<button class="pick-stu" data-id="${s.id}" aria-pressed="false"><b>${esc(s.name)}</b> ${s.grade}年<br><small>疲れ ${s.fatigue}・やる気 ${s.mood}${s.talent.some(k => p.gains[k]) ? '・得意' : ''}</small></button>`).join('') || '<p>練習できる生徒がいません。</p>'}</div>`;
+    let mode = game.lastMode === 'skill' ? 'skill' : 'stat';
+    const segBtn = (m, l) => `<button class="seg ${mode === m ? 'on' : ''}" data-mode="${m}" aria-pressed="${mode === m}">${l}</button>`;
+    const skillInfo = s => {
+        const id = nextSkill(s, sub);
+        return id ? `次の技「${SKILLS[id].name}」${Math.round(s.skillProg[sub] || 0)}%` : 'この系統の技は全部覚えた';
+    };
+    const body = `<p>練習: <b>${esc(p.name)}</b>${mul > 1 ? '　<b>じっくり: 効果 2 倍</b>' : ''}</p>
+        <div class="segs">${segBtn('stat', `能力を伸ばす（${Object.keys(p.gains).map(k => STAT_BY_KEY[k].name).join('・')}）`)}${segBtn('skill', '技を練習する')}</div>
+        <p class="muted">指導する生徒を 2 人まで選んでください。選ばれなかった生徒も、能力が少しだけ伸びます。</p>
+        <div class="pick" data-mode="${mode}">${avail.map(s => `<button class="pick-stu" data-id="${s.id}" aria-pressed="false"><b>${esc(s.name)}</b> ${s.grade}年<br><small class="for-stat">疲れ ${s.fatigue}・やる気 ${s.mood}${s.talent.some(k => p.gains[k]) ? '・得意' : ''}</small><small class="for-skill">${esc(skillInfo(s))}</small></button>`).join('') || '<p>練習できる生徒がいません。</p>'}</div>`;
     showDialog({
         title: '練習', body,
-        buttons: [{ label: '指導する', primary: true, id: 'practice-go', onClick: () => doPractice([...chosen]) }],
+        buttons: [{ label: '指導する', primary: true, id: 'practice-go', onClick: () => doPractice([...chosen], mode) }],
         onOpen: () => {
+            ui.dlgBody.querySelectorAll('.seg[data-mode]').forEach(el => el.addEventListener('click', () => {
+                mode = el.dataset.mode;
+                ui.dlgBody.querySelectorAll('.seg[data-mode]').forEach(e2 => { const on = e2.dataset.mode === mode; e2.classList.toggle('on', on); e2.setAttribute('aria-pressed', on); });
+                ui.dlgBody.querySelector('.pick').dataset.mode = mode;
+            }));
             ui.dlgBody.querySelectorAll('.pick-stu').forEach(el => el.addEventListener('click', () => {
                 const id = Number(el.dataset.id);
                 if (chosen.has(id)) chosen.delete(id); else if (chosen.size < 2) chosen.add(id);
@@ -583,6 +589,142 @@ function openShop() {
         },
     });
 }
+// ---------- 戦いの準備と結果 ----------
+const ROUND_NAMES = ['1 回戦', '準々決勝', '準決勝', '決勝'];
+function battleSetup(p) {
+    if (p.mode === 'small') return { title: '小さな戦い', max: 4, pool: game.students.filter(s => !isInjured(s)) };
+    const info = fixedInfo(p.key);
+    const individual = p.key !== 'team';
+    const pool = game.students.filter(s => !isInjured(s) && (p.key !== 'rookie' || s.grade === 1));
+    return { title: `${info.name}（${info.desc}）`, max: individual ? 1 : 4, pool, info, individual };
+}
+function tournamentFoes(p) {
+    const st = battleSetup(p);
+    const strength = 0.92 + p.round * 0.08;
+    const jobs = p.key === 'sword' ? ['warrior', 'knight', 'thief', 'hunter'] : null;
+    const school = p.schools[p.round];
+    return Array.from({ length: st.max }, () => ({ ...makeRival(game.day, strength, jobs, p.key === 'rookie'), sub: school }));
+}
+function openFormation() {
+    const p = game.pending;
+    if (battle) return;
+    if (p.mode === 'tournament' && p.round > 0 && p.party) { openNextMatch(); return; }
+    const st = battleSetup(p);
+    if (p.mode === 'small' && !p.enemies) { p.enemies = makeMonsters(game.day); saveGame(); }
+    if (p.mode === 'tournament' && !p.schools) { p.schools = shuffle(RIVAL_SCHOOLS).slice(0, 4); saveGame(); }
+    if (!st.pool.length) {
+        game.pending = { kind: 'notice', title: st.title, html: '<p>出られる生徒がいなかった。</p>' };
+        game.message = `${st.title}: 出られる生徒がいなかった。`;
+        saveGame(); render(); return;
+    }
+    const chosen = new Set(game.lastParty.filter(id => st.pool.some(s => s.id === id)).slice(0, st.max));
+    // 足りない分は総合の高い順に埋める
+    st.pool.slice().sort((a, b) => power(b) - power(a)).forEach(s => { if (chosen.size < st.max) chosen.add(s.id); });
+    let tactic = game.lastTactic || 'balance';
+    const foeText = p.mode === 'small' ? `相手: ${p.enemies.map(e => esc(e.name)).join('、')}` : `${st.individual ? '学校代表を 1 人選んでください。' : '出場する 4 人を選んでください。'}勝ち抜くと ${ROUND_NAMES.length} 試合あります。`;
+    const body = `<p>${foeText}</p>
+        <div class="pick">${st.pool.map(s => `<button class="pick-stu" data-id="${s.id}" aria-pressed="${chosen.has(s.id)}"><b>${esc(s.name)}</b> ${s.grade}年<br><small>総合 ${Math.round(power(s))}・疲れ ${s.fatigue}・技 ${s.skills.length}</small></button>`).join('')}</div>
+        <p style="margin-top:12px">作戦</p><div class="segs">${Object.entries(TACTICS).map(([k, t]) => `<button class="seg ${tactic === k ? 'on' : ''}" data-tactic="${k}" aria-pressed="${tactic === k}" title="${esc(t.desc)}">${t.name}</button>`).join('')}</div>
+        <p class="muted" id="tactic-desc">${esc(TACTICS[tactic].desc)}</p>`;
+    const buttons = [{ label: `${icon('swords')}戦う`, primary: true, id: 'fight-go', onClick: () => beginBattle([...chosen], tactic) }];
+    if (p.mode === 'small') buttons.unshift({ label: '逃げる', ghost: true, onClick: () => { game.pending = null; game.message = '戦わずに引き返した。'; saveGame(); render(); } });
+    showDialog({
+        title: st.title, body, buttons,
+        onOpen: () => {
+            const sync = () => {
+                ui.dlgBody.querySelectorAll('.pick-stu').forEach(e2 => e2.setAttribute('aria-pressed', chosen.has(Number(e2.dataset.id))));
+                $('fight-go').disabled = !chosen.size;
+            };
+            ui.dlgBody.querySelectorAll('.pick-stu').forEach(el => el.addEventListener('click', () => {
+                const id = Number(el.dataset.id);
+                if (chosen.has(id)) chosen.delete(id);
+                else { if (chosen.size >= st.max) chosen.delete([...chosen][0]); chosen.add(id); }
+                sync();
+            }));
+            ui.dlgBody.querySelectorAll('.seg[data-tactic]').forEach(el => el.addEventListener('click', () => {
+                tactic = el.dataset.tactic;
+                ui.dlgBody.querySelectorAll('.seg[data-tactic]').forEach(e2 => { const on = e2.dataset.tactic === tactic; e2.classList.toggle('on', on); e2.setAttribute('aria-pressed', on); });
+                $('tactic-desc').textContent = TACTICS[tactic].desc;
+            }));
+            sync();
+        },
+    });
+}
+function beginBattle(ids, tactic) {
+    const p = game.pending;
+    if (battleSetup(p).max === 4) game.lastParty = ids;   // 個人戦の代表は覚えない
+    game.lastTactic = tactic;
+    p.party = ids; p.tactic = tactic;
+    saveGame();
+    runMatch();
+}
+function runMatch() {
+    const p = game.pending;
+    const team = p.party.map(id => game.students.find(s => s.id === id)).filter(Boolean);
+    const st = battleSetup(p);
+    const enemies = p.mode === 'small' ? p.enemies : tournamentFoes(p);
+    const title = p.mode === 'small' ? '小さな戦い' : `${st.info.name} ${ROUND_NAMES[p.round]}: ${p.schools[p.round]}`;
+    const mods = p.key === 'sword' ? { phys: 1.3, mag: 0.7 } : null;
+    renderHand();
+    startBattle({ title, allies: team, enemies, tactic: p.tactic, mods, onEnd: afterMatch });
+}
+// 戦った生徒は少し伸びる
+function battleGrowth(s, win) {
+    const keys = shuffle(['hp', 'atk', 'mag', 'def', 'mdef', 'aspd', 'mspd']).slice(0, 2);
+    keys.forEach(k => addStat(s, k, rand(1, 3) + (win ? 1 : 0)));
+    if (Math.random() < 0.3) addStat(s, pick(['crit', 'pen', 'ten']), 0.5);
+    return keys;
+}
+function afterMatch(r) {
+    const p = game.pending;
+    const team = r.units.map(u => game.students.find(s => s.id === u.studentId)).filter(Boolean);
+    team.forEach(s => { battleGrowth(s, r.win); s.fatigue += p.mode === 'small' ? 8 : 10; s.mood += r.win ? 5 : -5; normalizeStudent(s); });
+    refillHand();
+    if (p.mode === 'small') {
+        if (r.win) {
+            const gold = rand(20, 50) + Math.floor(game.day / 10);
+            game.gold += gold; game.fame += 1;
+            game.message = `小さな戦いに勝った。${gold} ゴールド、知名度 +1。戦った生徒の能力が少し伸びた。`;
+        } else {
+            game.message = '小さな戦いに負けた。生徒たちは悔しそうだ。';
+        }
+        game.pending = null;
+        saveGame(); render(); return;
+    }
+    // 大会
+    if (r.win) {
+        team.forEach(s => { s.wins++; });
+        p.round++;
+        if (p.round >= ROUND_NAMES.length) { finishTournament(p, 4); return; }
+        team.forEach(s => { s.fatigue -= 5; normalizeStudent(s); });
+        saveGame();
+        openNextMatch(true);
+    } else finishTournament(p, p.round);
+}
+function openNextMatch(justWon) {
+    const p = game.pending;
+    const st = battleSetup(p);
+    showDialog({
+        title: st.info.name,
+        body: `${justWon ? `<p class="big">${ROUND_NAMES[p.round - 1]} 勝ち</p>` : ''}<p>次は <b>${ROUND_NAMES[p.round]}</b>。相手は ${esc(p.schools[p.round])}。</p><p class="muted">試合の間に体力は戻ります。</p>`,
+        buttons: [{ label: `${icon('swords')}次の試合へ`, primary: true, onClick: runMatch }],
+    });
+}
+function finishTournament(p, wins) {
+    const st = battleSetup(p);
+    const result = wins === 4 ? '優勝' : wins === 3 ? '準優勝' : wins === 2 ? 'ベスト 4' : wins === 1 ? 'ベスト 8' : '1 回戦負け';
+    const fame = wins * 6 + (wins === 4 ? 20 : 0);
+    const gold = wins * 20 + (wins === 4 ? 100 : 0);
+    game.fame += fame; game.gold += gold;
+    const team = p.party.map(id => game.students.find(s => s.id === id)).filter(Boolean);
+    game.pending = {
+        kind: 'notice', title: st.title,
+        html: `<p>出場: ${team.map(s => esc(s.name)).join('、')}</p><p class="big">${result}</p><p>知名度 +${fame}　${gold} ゴールド</p>`,
+    };
+    game.message = `${st.info.name}: ${result}。`;
+    saveGame(); render();
+}
+
 function openYearEnd() {
     const rows = game.students.slice().sort((a, b) => b.grade - a.grade).map(s => `<tr><td>${esc(s.name)}</td><td>${s.grade}年</td><td>${JOB_BY_KEY[s.hope].name}</td><td>${Math.round(power(s))}</td><td>${s.wins}</td></tr>`).join('');
     showDialog({
@@ -603,7 +745,9 @@ function openStudent(id) {
     }).join('');
     showDialog({
         title: `${s.name}（${s.grade}年）`, wide: true,
-        body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>`,
+        body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>
+            <h3>覚えた技</h3>${s.skills.length ? `<ul class="plain">${s.skills.map(id => `<li><b>${SKILLS[id].name}</b>　<small>${esc(SKILLS[id].desc)}（マナ ${SKILLS[id].mp}）</small></li>`).join('')}</ul>` : '<p class="muted">まだない。練習のマスで「技を練習する」を選ぶと覚えられる。</p>'}
+            ${Object.entries(s.skillProg).filter(([l, v]) => v > 0 && nextSkill(s, l)).map(([l, v]) => `<p class="muted">練習中: ${SKILLS[nextSkill(s, l)].name} ${Math.round(v)}%</p>`).join('')}`,
     });
 }
 function openCalendar(month) {
@@ -674,6 +818,7 @@ function loadGame() {
         if (!p || typeof p !== 'object' || !p.board || !Array.isArray(p.students)) throw new Error('invalid save');
         game = Object.assign(makeDefaultGame(), p);
         game.students.forEach(normalizeStudent);
+        if ((p.saveVersion || 1) < 2) migrateTo2();
         game.saveVersion = SAVE_VERSION;
         return true;
     } catch (err) {
@@ -681,6 +826,14 @@ function loadGame() {
         setTimeout(() => toast('セーブデータが壊れていたので、最初から始めました'), 0);
         return false;
     }
+}
+// v0.1 のセーブ: これから先の日に戦いのマスを足し、2・3 年生に最初の技を持たせる
+function migrateTo2() {
+    for (let i = game.day + 1; i < DAYS_IN_YEAR; i++) {
+        if (game.board.days[i].type !== 'fixed' && Math.random() < 0.1) game.board.days[i] = { type: 'battle' };
+    }
+    game.board.branches.forEach(b => b.routes.forEach(r => { if (r.key === 'forest' && b.start > game.day) r.squares = r.squares.map(q => Math.random() < 0.3 ? { type: 'battle' } : q); }));
+    game.students.forEach(s => { if (s.grade >= 2 && !s.skills.length) s.skills.push(SKILL_LINES[JOB_LINE[s.hope]][0]); });
 }
 function fullReset() {
     if (!confirm('今までのデータを消して、最初からやり直しますか？（元に戻せません）')) return;
@@ -697,6 +850,7 @@ function init() {
     ui.version.textContent = `v${APP_VERSION}`;
     ui.version.addEventListener('click', openHistory);
     $('cal-btn').addEventListener('click', () => openCalendar());
+    initBattleUI();
     $('set-btn').addEventListener('click', openSettings);
     ui.go.addEventListener('click', go);
     ui.dlg.addEventListener('cancel', e => { if (game.pending) e.preventDefault(); else dialogOpen = false; });
