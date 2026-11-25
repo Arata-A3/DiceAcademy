@@ -2,7 +2,7 @@
 'use strict';
 
 const SAVE_KEY = 'diceacademy_save';
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
 const BASE_YEAR = 2026;          // 暦の曜日を決めるための年（画面には出さない）
 const DAYS_IN_YEAR = 365;
 const STRIP_DAYS = 21;           // 暦の帯に出す日数
@@ -101,22 +101,23 @@ function statDiff(before, s) {
     return res;
 }
 function fmtDiff(res) { return Object.entries(res).map(([k, v]) => `${STAT_BY_KEY[k].name} +${STAT_BY_KEY[k].pct ? v.toFixed(1) : v}`).join('、'); }
-// 段階（E〜S）。割合の能力には付けない
-function statRank(key, v) {
-    const st = STAT_BY_KEY[key];
-    if (!st.ranks) return null;
-    let i = 0; while (i < st.ranks.length && v >= st.ranks[i]) i++;
-    return i;
+// 評価点: ふつうの 1 年分の伸びで 100 点。どの能力も同じ物差し
+function statPoints(key, v) { const st = STAT_BY_KEY[key]; return Math.max(0, (v - st.base) / st.growth * 100); }
+// 評価点の段階（0 = E 〜 5 = S）
+function rankOf(points) { let i = 0; while (i < RANKS.length && points >= RANKS[i]) i++; return i; }
+function statRank(key, v) { return rankOf(statPoints(key, v)); }
+function rankTag(r) { return `<span class="rank r${r}">${RANK_NAMES[r]}</span>`; }
+// 棒の長さ（0〜100）: 今の段階の中での進み具合
+function rankBar(points) {
+    const r = rankOf(points);
+    if (r >= RANKS.length) return 100;
+    const lo = r === 0 ? 0 : RANKS[r - 1], hi = RANKS[r];
+    return clamp((points - lo) / (hi - lo) * 100, 0, 100);
 }
-// 能力の棒の長さ（0〜100）。割合の能力は 100% で満タン、定数の能力は今の段階の中での進み具合
-function statBar(key, v) {
-    const st = STAT_BY_KEY[key];
-    if (st.pct) return clamp(v, 0, 100);
-    const r = statRank(key, v);
-    if (r >= st.ranks.length) return 100;
-    const lo = r === 0 ? 0 : st.ranks[r - 1], hi = st.ranks[r];
-    return clamp((v - lo) / (hi - lo) * 100, 0, 100);
-}
+// 総合力: 16 の能力の評価点の合計。段階は 1 つあたりの平均で決める
+function power(s) { return STATS.reduce((a, st) => a + statPoints(st.key, s.stats[st.key]), 0); }
+function powerRank(s) { return rankOf(power(s) / STATS.length); }
+function powerText(s) { return `${Math.round(power(s))}（${RANK_NAMES[powerRank(s)]}）`; }
 // 足りない能力を埋める（古いセーブ・古い戦いの相手）
 function fillStats(stats) {
     if (stats.pen !== undefined) {
@@ -134,7 +135,7 @@ const SKILL_NEED = 100;
 function fmtStat(key, v) {
     const st = STAT_BY_KEY[key];
     if (st.pct) return v > 100 ? `100%（+${(v - 100).toFixed(1)}%）` : `${v.toFixed(1)}%`;
-    return `${v}${st.unit || ''}`;
+    return `${v}${st.suffix || ''}`;
 }
 function normalizeStudent(s) {
     if (!Array.isArray(s.skills)) s.skills = [];
@@ -142,8 +143,10 @@ function normalizeStudent(s) {
     s.fatigue = clamp(Math.round(s.fatigue), 0, 100);
     s.mood = clamp(Math.round(s.mood), 0, 100);
 }
-// 職業の要件: 見る能力がどれも req 以上
-function meetsJob(s, job) { return job.favor.every(k => s.stats[k] >= STAT_BY_KEY[k].req); }
+// 職業の要件: 見る能力の評価点の合計が、JOB_NEED × 能力の数 以上（平均で段階 B）
+function jobPoints(s, job) { return job.favor.reduce((a, k) => a + statPoints(k, s.stats[k]), 0); }
+function jobNeed(job) { return JOB_NEED * job.favor.length; }
+function meetsJob(s, job) { return jobPoints(s, job) >= jobNeed(job); }
 // 卒業のときに選べる職業（どれも満たさなければ村人）
 function eligibleJobs(s) {
     const ok = JOBS.filter(j => meetsJob(s, j));
@@ -152,20 +155,13 @@ function eligibleJobs(s) {
 function reqRows(s) {
     return `<div class="reqs">${JOBS.map(j => {
         const can = meetsJob(s, j);
-        const items = j.favor.map(k => {
-            const st = STAT_BY_KEY[k], v = s.stats[k];
-            const fmt = x => st.pct ? `${Math.round(x)}%` : `${Math.round(x)}${st.unit || ''}`;
-            return `<span class="req-item ${v >= st.req ? 'ok' : ''}">${st.name} <b>${fmt(Math.min(v, 999))}</b> / ${fmt(st.req)}</span>`;
-        }).join('');
-        return `<div class="req ${can ? 'can' : ''}"><span class="req-job">${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}${can ? ' <small class="req-can">なれる</small>' : ''}</span><span class="req-items">${items}</span></div>`;
+        const pts = jobPoints(s, j);
+        const items = j.favor.map(k => `<span class="req-item">${STAT_BY_KEY[k].name} ${rankTag(statRank(k, s.stats[k]))}</span>`).join('');
+        return `<div class="req ${can ? 'can' : ''}"><span class="req-job">${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}${can ? ' <small class="req-can">なれる</small>' : ''}
+            <span class="req-sum">${rankTag(rankOf(pts / j.favor.length))} ${Math.round(pts)} / ${jobNeed(j)}</span></span>
+            <span class="bar"><i style="width:${clamp(pts / jobNeed(j) * 100, 0, 100)}%"></i></span><span class="req-items">${items}</span></div>`;
     }).join('')}</div>`;
 }
-// 能力ごとの大きさの違いをならした値（総合と適性に使う）
-function statScore(key, v) { const sc = STAT_BY_KEY[key].score; return Math.max(0, v - sc.base) * sc.w; }
-function power(s, weights = {}) {
-    return STATS.reduce((a, st) => a + statScore(st.key, s.stats[st.key]) * (weights[st.key] || 1), 0);
-}
-
 // ---------- 盤 ----------
 function makeSquare(type) {
     const sq = { type };
@@ -249,9 +245,6 @@ function newGame() {
     game = makeDefaultGame();
     game.appearance = appearance;
     game.board = generateBoard();
-    const used = new Set();
-    for (let i = 0; i < 2; i++) game.students.push(makeStudent(3, used));
-    for (let i = 0; i < 3; i++) game.students.push(makeStudent(2, used));
     refillHand();
     addSpecial('free');
     game.message = 'ダイスアカデミーへようこそ。今日は入学式です。';
@@ -693,7 +686,7 @@ function openFormation() {
     let tactic = game.lastTactic || 'balance';
     const foeText = p.mode === 'small' ? `相手: ${p.enemies.map(e => esc(e.name)).join('、')}` : `${st.individual ? '学校代表を 1 人選んでください。' : '出場する 4 人を選んでください。'}勝ち抜くと ${ROUND_NAMES.length} 試合あります。`;
     const body = `<p>${foeText}</p>
-        <div class="pick">${st.pool.map(s => `<button class="pick-stu" data-id="${s.id}" aria-pressed="${chosen.has(s.id)}"><b>${esc(s.name)}</b> ${s.grade}年<br><small>総合 ${Math.round(power(s))}・疲れ ${s.fatigue}・技 ${s.skills.length}</small></button>`).join('')}</div>
+        <div class="pick">${st.pool.map(s => `<button class="pick-stu" data-id="${s.id}" aria-pressed="${chosen.has(s.id)}"><b>${esc(s.name)}</b> ${s.grade}年<br><small>総合力 ${powerText(s)}・疲れ ${s.fatigue}・技 ${s.skills.length}</small></button>`).join('')}</div>
         <p style="margin-top:12px">作戦</p><div class="segs">${Object.entries(TACTICS).map(([k, t]) => `<button class="seg ${tactic === k ? 'on' : ''}" data-tactic="${k}" aria-pressed="${tactic === k}" title="${esc(t.desc)}">${t.name}</button>`).join('')}</div>
         <p class="muted" id="tactic-desc">${esc(TACTICS[tactic].desc)}</p>`;
     const buttons = [{ label: `${icon('swords')}戦う`, primary: true, id: 'fight-go', onClick: () => beginBattle([...chosen], tactic) }];
@@ -818,8 +811,8 @@ function openGraduation() {
         : ok.length === 1 ? '要件を満たした職業は 1 つだけ。' : '要件を満たした職業から、進む道を選んでください。';
     showDialog({
         title: `卒業式: ${s.name}`, wide: true,
-        body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　総合 ${Math.round(power(s))}　大会の勝ち ${s.wins}　技 ${s.skills.length}</p>
-            <p class="muted">職業の要件（その職業で見る能力が、どれも決まった値以上ならなれる）。</p>
+        body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　総合力 ${powerText(s)}　大会の勝ち ${s.wins}　技 ${s.skills.length}</p>
+            <p class="muted">職業の要件: その職業で見る能力の評価点の合計が、平均で段階 B（1 つあたり ${JOB_NEED} 点）に届けばなれる。</p>
             ${reqRows(s)}<p>${note}</p>`,
         buttons: ok.map(j => ({ label: `${icon('cap')}${j.name}${j.key === s.hope ? '（希望）' : ''}として卒業`, primary: j.key === s.hope || ok.length === 1, onClick: () => graduate(s, j) })),
     });
@@ -828,7 +821,7 @@ function graduate(s, job) {
     const p = game.pending;
     game.alumni.push({
         id: s.id, name: s.name, year: game.year, job: job.key, hope: s.hope, wins: s.wins,
-        power: Math.round(power(s)), stats: { ...s.stats }, skills: s.skills.slice(),
+        power: Math.round(power(s)), rank: powerRank(s), stats: { ...s.stats }, skills: s.skills.slice(),
     });
     game.students = game.students.filter(x => x.id !== s.id);
     game.lastParty = game.lastParty.filter(id => id !== s.id);
@@ -847,7 +840,7 @@ function finishGraduation() {
 function openYearEnd() {
     // 卒業式を迎えずに修了式に来た 3 年生（古いセーブなど）は、先に卒業させる
     if (game.students.some(s => s.grade >= 3)) { startGraduation('yearend'); saveGame(); render(); return; }
-    const rows = game.students.slice().sort((a, b) => b.grade - a.grade || a.id - b.id).map(s => `<tr><td>${esc(s.name)}</td><td>${s.grade}年 → ${s.grade + 1}年</td><td>${JOB_BY_KEY[s.hope].name}</td><td>${Math.round(power(s))}</td><td>${s.wins}</td></tr>`).join('');
+    const rows = game.students.slice().sort((a, b) => b.grade - a.grade || a.id - b.id).map(s => `<tr><td>${esc(s.name)}</td><td>${s.grade}年 → ${s.grade + 1}年</td><td>${JOB_BY_KEY[s.hope].name}</td><td>${powerText(s)}</td><td>${s.wins}</td></tr>`).join('');
     const recs = game.records.filter(r => r.year === game.year).map(r => `<li>${esc(r.name)}: ${esc(r.result)}</li>`).join('');
     const grads = game.alumni.filter(a => a.year === game.year).map(a => `${esc(a.name)}（${JOB_BY_KEY[a.job].name}）`).join('、');
     showDialog({
@@ -855,7 +848,7 @@ function openYearEnd() {
         body: `<p>知名度 ${game.fame}　所持金 ${game.gold} ゴールド</p>
             ${recs ? `<h3>今年の大会</h3><ul class="plain">${recs}</ul>` : ''}
             ${grads ? `<h3>今年の卒業生</h3><p>${grads}</p>` : ''}
-            <h3>進級する生徒</h3>${rows ? `<table class="tbl"><tr><th>名前</th><th>学年</th><th>希望</th><th>総合</th><th>大会の勝ち</th></tr>${rows}</table>` : '<p class="muted">いない。</p>'}
+            <h3>進級する生徒</h3>${rows ? `<table class="tbl"><tr><th>名前</th><th>学年</th><th>希望</th><th>総合力</th><th>大会の勝ち</th></tr>${rows}</table>` : '<p class="muted">いない。</p>'}
             <p class="muted">春休みのあいだに疲れとけがは治る。次の日は入学式。</p>`,
         buttons: [{ label: `${icon('arrow')}${game.year + 1}年目へ`, primary: true, onClick: startNewYear }],
     });
@@ -878,7 +871,7 @@ function openAlumni() {
         const al = game.alumni.filter(a => a.year === y);
         return `<h3>${y}年目</h3>
             ${recs.length ? `<p>大会: ${recs.map(r => `${esc(r.name)} ${esc(r.result)}`).join('、')}</p>` : ''}
-            ${al.length ? `<table class="tbl"><tr><th>卒業生</th><th>職業</th><th>希望</th><th>総合</th><th>大会の勝ち</th><th>技</th></tr>${al.map(a => `<tr><td>${esc(a.name)}</td><td><b>${JOB_BY_KEY[a.job].name}</b></td><td>${JOB_BY_KEY[a.hope].name}</td><td>${a.power}</td><td>${a.wins}</td><td>${a.skills.length}</td></tr>`).join('')}</table>` : ''}`;
+            ${al.length ? `<table class="tbl"><tr><th>卒業生</th><th>職業</th><th>希望</th><th>総合力</th><th>大会の勝ち</th><th>技</th></tr>${al.map(a => `<tr><td>${esc(a.name)}</td><td><b>${JOB_BY_KEY[a.job].name}</b></td><td>${JOB_BY_KEY[a.hope].name}</td><td>${a.power}（${RANK_NAMES[a.rank || 0]}）</td><td>${a.wins}</td><td>${a.skills.length}</td></tr>`).join('')}</table>` : ''}`;
     }).join('');
     showDialog({
         title: '学園の歴史', wide: true,
@@ -890,12 +883,14 @@ function openStudent(id) {
     if (!s) return;
     const rows = STATS.map(st => {
         const v = s.stats[st.key];
-        const r = statRank(st.key, v);
-        return `<div class="srow ${s.talent.includes(st.key) ? 'talent' : ''}"><span>${st.name}${s.talent.includes(st.key) ? ' <small>得意</small>' : ''}</span><span class="bar"><i style="width:${statBar(st.key, v)}%"></i></span><b>${fmtStat(st.key, v)}</b><span class="rank ${r === null ? '' : `r${r}`}">${r === null ? '' : RANK_NAMES[r]}</span></div>`;
+        const pts = statPoints(st.key, v);
+        return `<div class="srow ${s.talent.includes(st.key) ? 'talent' : ''}"><span>${st.name}${s.talent.includes(st.key) ? ' <small>得意</small>' : ''}</span><span class="bar"><i style="width:${rankBar(pts)}%"></i></span><b>${fmtStat(st.key, v)}</b>${rankTag(rankOf(pts))}</div>`;
     }).join('');
     showDialog({
         title: `${s.name}（${s.grade}年）`, wide: true,
-        body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>
+        body: `<p class="power-line">総合力 <b class="power-num">${Math.round(power(s))}</b> ${rankTag(powerRank(s))}<span class="bar"><i style="width:${rankBar(power(s) / STATS.length)}%"></i></span></p>
+            <p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>
+            <p class="muted">段階は評価点で決まる。評価点は、その能力が伸びる練習で優先して指導したときの 1 年分の伸びを 100 点とする（D ${RANKS[0]}・C ${RANKS[1]}・B ${RANKS[2]}・A ${RANKS[3]}・S ${RANKS[4]}）。どの能力も同じ物差し。総合力は 16 の能力の評価点の合計。</p>
             <h3>職業の要件</h3>${reqRows(s)}
             <p class="muted">卒業式（3 月 20 日）で、要件を満たした職業から選べる。どれも満たさなければ村人になる。希望の職業で見る能力は少し伸びやすい。${s.grade < 3 ? `卒業まであと ${3 - s.grade} 年。` : '今年卒業する。'}</p>
             <h3>覚えた技</h3>${s.skills.length ? `<ul class="plain">${s.skills.map(id => `<li><b>${SKILLS[id].name}</b>　<small>${esc(SKILLS[id].desc)}（マナ ${SKILLS[id].mp}）</small></li>`).join('')}</ul>` : '<p class="muted">まだない。練習のマスで「技を練習する」を選ぶと覚えられる。</p>'}
@@ -973,6 +968,7 @@ function loadGame() {
         if ((p.saveVersion || 1) < 2) migrateTo2();
         if ((p.saveVersion || 1) < 3) migrateTo3();
         if ((p.saveVersion || 1) < 4) migrateTo4();
+        if ((p.saveVersion || 1) < 5) migrateTo5();
         game.saveVersion = SAVE_VERSION;
         return true;
     } catch (err) {
@@ -1016,6 +1012,10 @@ function migrateTo4() {
     game.students.forEach(grow);
     game.alumni.forEach(grow);
     if (game.pending && Array.isArray(game.pending.enemies)) game.pending.enemies.forEach(e => fillStats(e.stats));
+}
+// v0.5 までのセーブ: 卒業生の総合力を新しい評価点で計算し直す
+function migrateTo5() {
+    game.alumni.forEach(a => { fillStats(a.stats); a.power = Math.round(power(a)); a.rank = powerRank(a); });
 }
 function fullReset() {
     if (!confirm('今までのデータを消して、最初からやり直しますか？（元に戻せません）')) return;

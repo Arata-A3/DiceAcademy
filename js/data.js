@@ -2,34 +2,34 @@
 
 // 能力 16 個
 // pct: 割合の能力（% で表示。100% まで。overflow があれば、超えた分をその能力に移す。無ければ超えた分も持ち続ける）
-// それ以外は上限のない定数の能力。ranks は段階 D・C・B・A・S に届く値（目安）
+// それ以外は上限のない定数の能力
+// 評価点: (値 − base) ÷ growth × 100。growth は、その能力が伸びる練習で優先して指導したときの 1 年の伸び（試算）。
+//   どの能力も「狙って育てた 1 年分の伸び = 100 点」になり、同じ点なら同じ段階になる
 // init / favor / grade: 入学時の値・希望の職業で上乗せされる値・学年が 1 つ上がるごとに足される値（生徒を作るとき）
-// score: 総合で比べるときの重み（base を引いてから掛ける）
-// req: 卒業のとき、その能力を見る職業になるのに要る値
-const BIG_RANKS = [60, 100, 150, 220, 320];
 const STATS = [
-    { key: 'hp', name: '体力', ranks: BIG_RANKS },
-    { key: 'mp', name: 'マナ', ranks: BIG_RANKS },
-    { key: 'atk', name: '攻撃力', ranks: BIG_RANKS },
-    { key: 'mag', name: '魔力', ranks: BIG_RANKS },
-    { key: 'def', name: '物理防御', ranks: BIG_RANKS },
-    { key: 'mdef', name: '魔法防御', ranks: BIG_RANKS },
-    { key: 'aspd', name: '攻撃速度', ranks: BIG_RANKS },
-    { key: 'mspd', name: '移動速度', ranks: BIG_RANKS },
-    { key: 'haste', name: 'スキルヘイスト', ranks: BIG_RANKS },
-    { key: 'crit', name: 'クリティカル率', pct: true, req: 38, overflow: { to: 'critdmg', rate: 1 }, init: [3, 8], favor: [2, 5], grade: [4, 8], score: { w: 8 } },
-    { key: 'critdmg', name: 'クリティカルダメージ倍率', unit: '%', req: 210, ranks: [160, 175, 195, 220, 260], init: [150, 155], favor: [5, 10], grade: [8, 14], score: { base: 140, w: 3 } },
-    { key: 'ppen', name: '物理防御貫通率', pct: true, req: 26, init: [0, 3], favor: [2, 5], grade: [3, 6], score: { w: 20 } },
-    { key: 'mpen', name: '魔法防御貫通率', pct: true, req: 26, init: [0, 3], favor: [2, 5], grade: [3, 6], score: { w: 20 } },
-    { key: 'plet', name: '物理防御貫通力', req: 28, ranks: [6, 12, 22, 36, 55], init: [0, 4], favor: [3, 6], grade: [3, 7], score: { w: 8 } },
-    { key: 'mlet', name: '魔法防御貫通力', req: 28, ranks: [6, 12, 22, 36, 55], init: [0, 4], favor: [3, 6], grade: [3, 7], score: { w: 8 } },
-    { key: 'ten', name: '行動妨害耐性', pct: true, req: 26, overflow: { to: 'mdef', rate: 3 }, init: [0, 3], favor: [2, 5], grade: [3, 6], score: { w: 16 } },
+    { key: 'hp', name: '体力', growth: 36 },
+    { key: 'mp', name: 'マナ', growth: 26.5 },
+    { key: 'atk', name: '攻撃力', growth: 35 },
+    { key: 'mag', name: '魔力', growth: 26 },
+    { key: 'def', name: '物理防御', growth: 26 },
+    { key: 'mdef', name: '魔法防御', growth: 36 },
+    { key: 'aspd', name: '攻撃速度', growth: 29 },
+    { key: 'mspd', name: '移動速度', growth: 17 },
+    { key: 'haste', name: 'スキルヘイスト', growth: 15.7 },
+    { key: 'crit', name: 'クリティカル率', pct: true, base: 6, growth: 6.7, overflow: { to: 'critdmg', rate: 1 }, init: [3, 8], favor: [2, 5], grade: [4, 8] },
+    { key: 'critdmg', name: 'クリティカルダメージ倍率', suffix: '%', base: 153, growth: 10.7, init: [150, 155], favor: [5, 10], grade: [8, 14] },
+    { key: 'ppen', name: '物理防御貫通率', pct: true, base: 2, growth: 3.5, init: [0, 3], favor: [2, 5], grade: [3, 6] },
+    { key: 'mpen', name: '魔法防御貫通率', pct: true, base: 2, growth: 3.5, init: [0, 3], favor: [2, 5], grade: [3, 6] },
+    { key: 'plet', name: '物理防御貫通力', base: 2, growth: 5, init: [0, 4], favor: [3, 6], grade: [3, 7] },
+    { key: 'mlet', name: '魔法防御貫通力', base: 2, growth: 5, init: [0, 4], favor: [3, 6], grade: [3, 7] },
+    { key: 'ten', name: '行動妨害耐性', pct: true, base: 2, growth: 5.1, overflow: { to: 'mdef', rate: 3 }, init: [0, 3], favor: [2, 5], grade: [3, 6] },
 ];
 STATS.forEach(st => {
     st.init = st.init || [20, 45]; st.favor = st.favor || [10, 20]; st.grade = st.grade || [25, 45];
-    st.score = Object.assign({ base: 0, w: 1 }, st.score);
-    if (st.req === undefined) st.req = 150;
+    if (st.base === undefined) st.base = 35;
 });
+// 段階 D・C・B・A・S に届く評価点（どの能力も同じ）
+const RANKS = [120, 260, 430, 600, 800];
 const RANK_NAMES = ['E', 'D', 'C', 'B', 'A', 'S'];
 // 貫通率が 100% を超えた分: 超えた 1% ごとに、その種類の攻撃のダメージ +PEN_OVER_RATE %
 const PEN_OVER_RATE = 1;
@@ -37,7 +37,7 @@ const PEN_OVER_RATE = 1;
 const LET_OVER_RATE = 0.5;
 const STAT_BY_KEY = Object.fromEntries(STATS.map(s => [s.key, s]));
 
-// 職業 6 つ。favor: 決まるときに見る能力。卒業のとき、どれも STATS の req 以上ならなれる（入学時の能力の偏りにも使う）
+// 職業 6 つ。favor: 決まるときに見る能力。卒業のとき、その評価点の合計が JOB_NEED × 能力の数 以上ならなれる（入学時の能力の偏りにも使う）
 const JOBS = [
     { key: 'warrior', name: '戦士', favor: ['atk', 'hp'] },
     { key: 'knight', name: '騎士', favor: ['def', 'mdef', 'hp'] },
@@ -47,6 +47,8 @@ const JOBS = [
     { key: 'thief', name: '盗賊', favor: ['mspd', 'ppen', 'plet'] },
 ];
 const JOB_BY_KEY = Object.fromEntries(JOBS.map(j => [j.key, j]));
+// 職業になるのに要る、見る能力 1 つあたりの評価点（段階 B の下限）
+const JOB_NEED = RANKS[2];
 // 卒業のとき、どの職業の要件も満たさなかった生徒の進む道
 const VILLAGER = { key: 'villager', name: '村人', favor: [] };
 JOB_BY_KEY.villager = VILLAGER;
