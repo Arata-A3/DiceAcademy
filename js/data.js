@@ -28,7 +28,9 @@ STATS.forEach(st => {
     st.init = st.init || [20, 45]; st.favor = st.favor || [10, 20]; st.grade = st.grade || [25, 45];
     if (st.base === undefined) st.base = 35;
 });
-// 段階 D・C・B・A・S に届く評価点（どの能力も同じ）
+// 段階 D・C・B・A・S に届く評価点（どの能力も同じ）。
+// 画面には評価点を出さず、段階と + −（段階の中の下 3 分の 1 が −、上 3 分の 1 が +）だけを出す。
+// 総合力だけは数値で出す。そのときは段階ごとに 100 ずつ（E 0〜・D 100〜・C 200〜・B 300〜・A 400〜・S 500〜）に直す
 const RANKS = [120, 260, 430, 600, 800];
 const RANK_NAMES = ['E', 'D', 'C', 'B', 'A', 'S'];
 // 貫通率が 100% を超えた分: 超えた 1% ごとに、その種類の攻撃のダメージ +PEN_OVER_RATE %
@@ -37,7 +39,7 @@ const PEN_OVER_RATE = 1;
 const LET_OVER_RATE = 0.5;
 const STAT_BY_KEY = Object.fromEntries(STATS.map(s => [s.key, s]));
 
-// 職業 6 つ。favor: 決まるときに見る能力。卒業のとき、その評価点の合計が JOB_NEED × 能力の数 以上ならなれる（入学時の能力の偏りにも使う）
+// 職業 6 つ。favor: 決まるときに見る能力。卒業のとき、その評価の平均が段階 B 以上ならなれる（入学時の能力の偏りにも使う）
 const JOBS = [
     { key: 'warrior', name: '戦士', favor: ['atk', 'hp'] },
     { key: 'knight', name: '騎士', favor: ['def', 'mdef', 'hp'] },
@@ -47,8 +49,8 @@ const JOBS = [
     { key: 'thief', name: '盗賊', favor: ['mspd', 'ppen', 'plet'] },
 ];
 const JOB_BY_KEY = Object.fromEntries(JOBS.map(j => [j.key, j]));
-// 職業になるのに要る、見る能力 1 つあたりの評価点（段階 B の下限）
-const JOB_NEED = RANKS[2];
+// 職業になるのに要る、見る能力の評価の平均の段階（3 = B）
+const JOB_NEED_RANK = 3;
 // 卒業のとき、どの職業の要件も満たさなかった生徒の進む道
 const VILLAGER = { key: 'villager', name: '村人', favor: [] };
 JOB_BY_KEY.villager = VILLAGER;

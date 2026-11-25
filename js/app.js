@@ -2,7 +2,7 @@
 'use strict';
 
 const SAVE_KEY = 'diceacademy_save';
-const SAVE_VERSION = 5;
+const SAVE_VERSION = 6;
 const BASE_YEAR = 2026;          // 暦の曜日を決めるための年（画面には出さない）
 const DAYS_IN_YEAR = 365;
 const STRIP_DAYS = 21;           // 暦の帯に出す日数
@@ -104,19 +104,27 @@ function fmtDiff(res) { return Object.entries(res).map(([k, v]) => `${STAT_BY_KE
 // 評価点: ふつうの 1 年分の伸びで 100 点。どの能力も同じ物差し
 function statPoints(key, v) { const st = STAT_BY_KEY[key]; return Math.max(0, (v - st.base) / st.growth * 100); }
 // 評価点の段階（0 = E 〜 5 = S）
-function rankOf(points) { let i = 0; while (i < RANKS.length && points >= RANKS[i]) i++; return i; }
-function statRank(key, v) { return rankOf(statPoints(key, v)); }
-function rankTag(r) { return `<span class="rank r${r}">${RANK_NAMES[r]}</span>`; }
-// 棒の長さ（0〜100）: 今の段階の中での進み具合
-function rankBar(points) {
-    const r = rankOf(points);
-    if (r >= RANKS.length) return 100;
-    const lo = r === 0 ? 0 : RANKS[r - 1], hi = RANKS[r];
-    return clamp((points - lo) / (hi - lo) * 100, 0, 100);
+// 評価（段階ごとに 100）: E 0〜・D 100〜・C 200〜・B 300〜・A 400〜・S 500〜
+function gradeOf(points) {
+    const edges = [0, ...RANKS];
+    for (let i = 0; i < RANKS.length; i++) {
+        if (points < edges[i + 1]) return i * 100 + (points - edges[i]) / (edges[i + 1] - edges[i]) * 100;
+    }
+    const last = RANKS[RANKS.length - 1] - RANKS[RANKS.length - 2];
+    return RANKS.length * 100 + (points - RANKS[RANKS.length - 1]) / last * 100;
 }
-// 総合力: 16 の能力の評価点の合計。段階は 1 つあたりの平均で決める
-function power(s) { return STATS.reduce((a, st) => a + statPoints(st.key, s.stats[st.key]), 0); }
-function powerRank(s) { return rankOf(power(s) / STATS.length); }
+function statGrade(key, v) { return gradeOf(statPoints(key, v)); }
+function rankOf(grade) { return clamp(Math.floor(grade / 100), 0, RANK_NAMES.length - 1); }
+// 段階と + −（段階の中の下 3 分の 1 が −、上 3 分の 1 が +）
+function gradeLabel(grade) {
+    const r = rankOf(grade);
+    const f = r === RANK_NAMES.length - 1 ? Math.min(grade - r * 100, 99) : grade - r * 100;
+    return RANK_NAMES[r] + (f < 100 / 3 ? '−' : f >= 200 / 3 ? '+' : '');
+}
+function rankTag(grade) { return `<span class="rank r${rankOf(grade)}">${gradeLabel(grade)}</span>`; }
+// 総合力: 16 の能力の評価の平均（段階ごとに 100。能力の段階と同じ物差し）
+function power(s) { return STATS.reduce((a, st) => a + statGrade(st.key, s.stats[st.key]), 0) / STATS.length; }
+function powerRank(s) { return rankOf(power(s)); }
 function powerText(s) { return `${Math.round(power(s))}（${RANK_NAMES[powerRank(s)]}）`; }
 // 足りない能力を埋める（古いセーブ・古い戦いの相手）
 function fillStats(stats) {
@@ -143,10 +151,9 @@ function normalizeStudent(s) {
     s.fatigue = clamp(Math.round(s.fatigue), 0, 100);
     s.mood = clamp(Math.round(s.mood), 0, 100);
 }
-// 職業の要件: 見る能力の評価点の合計が、JOB_NEED × 能力の数 以上（平均で段階 B）
-function jobPoints(s, job) { return job.favor.reduce((a, k) => a + statPoints(k, s.stats[k]), 0); }
-function jobNeed(job) { return JOB_NEED * job.favor.length; }
-function meetsJob(s, job) { return jobPoints(s, job) >= jobNeed(job); }
+// 職業の要件: 見る能力の評価の平均が段階 B 以上
+function jobGrade(s, job) { return job.favor.reduce((a, k) => a + statGrade(k, s.stats[k]), 0) / job.favor.length; }
+function meetsJob(s, job) { return jobGrade(s, job) >= JOB_NEED_RANK * 100; }
 // 卒業のときに選べる職業（どれも満たさなければ村人）
 function eligibleJobs(s) {
     const ok = JOBS.filter(j => meetsJob(s, j));
@@ -155,11 +162,11 @@ function eligibleJobs(s) {
 function reqRows(s) {
     return `<div class="reqs">${JOBS.map(j => {
         const can = meetsJob(s, j);
-        const pts = jobPoints(s, j);
-        const items = j.favor.map(k => `<span class="req-item">${STAT_BY_KEY[k].name} ${rankTag(statRank(k, s.stats[k]))}</span>`).join('');
+        const g = jobGrade(s, j);
+        const items = j.favor.map(k => `<span class="req-item">${STAT_BY_KEY[k].name} ${rankTag(statGrade(k, s.stats[k]))}</span>`).join('');
         return `<div class="req ${can ? 'can' : ''}"><span class="req-job">${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}${can ? ' <small class="req-can">なれる</small>' : ''}
-            <span class="req-sum">${rankTag(rankOf(pts / j.favor.length))} ${Math.round(pts)} / ${jobNeed(j)}</span></span>
-            <span class="bar"><i style="width:${clamp(pts / jobNeed(j) * 100, 0, 100)}%"></i></span><span class="req-items">${items}</span></div>`;
+            <span class="req-sum">平均 ${rankTag(g)}（${RANK_NAMES[JOB_NEED_RANK]} 以上でなれる）</span></span>
+            <span class="bar"><i style="width:${clamp(g / (JOB_NEED_RANK * 100) * 100, 0, 100)}%"></i></span><span class="req-items">${items}</span></div>`;
     }).join('')}</div>`;
 }
 // ---------- 盤 ----------
@@ -812,7 +819,7 @@ function openGraduation() {
     showDialog({
         title: `卒業式: ${s.name}`, wide: true,
         body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　総合力 ${powerText(s)}　大会の勝ち ${s.wins}　技 ${s.skills.length}</p>
-            <p class="muted">職業の要件: その職業で見る能力の評価点の合計が、平均で段階 B（1 つあたり ${JOB_NEED} 点）に届けばなれる。</p>
+            <p class="muted">職業の要件: その職業で見る能力の評価の平均が ${RANK_NAMES[JOB_NEED_RANK]} 以上ならなれる。</p>
             ${reqRows(s)}<p>${note}</p>`,
         buttons: ok.map(j => ({ label: `${icon('cap')}${j.name}${j.key === s.hope ? '（希望）' : ''}として卒業`, primary: j.key === s.hope || ok.length === 1, onClick: () => graduate(s, j) })),
     });
@@ -883,14 +890,13 @@ function openStudent(id) {
     if (!s) return;
     const rows = STATS.map(st => {
         const v = s.stats[st.key];
-        const pts = statPoints(st.key, v);
-        return `<div class="srow ${s.talent.includes(st.key) ? 'talent' : ''}"><span>${st.name}${s.talent.includes(st.key) ? ' <small>得意</small>' : ''}</span><span class="bar"><i style="width:${rankBar(pts)}%"></i></span><b>${fmtStat(st.key, v)}</b>${rankTag(rankOf(pts))}</div>`;
+        return `<div class="srow ${s.talent.includes(st.key) ? 'talent' : ''}"><span>${st.name}${s.talent.includes(st.key) ? ' <small>得意</small>' : ''}</span><b>${fmtStat(st.key, v)}</b>${rankTag(statGrade(st.key, v))}</div>`;
     }).join('');
     showDialog({
         title: `${s.name}（${s.grade}年）`, wide: true,
-        body: `<p class="power-line">総合力 <b class="power-num">${Math.round(power(s))}</b> ${rankTag(powerRank(s))}<span class="bar"><i style="width:${rankBar(power(s) / STATS.length)}%"></i></span></p>
-            <p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>
-            <p class="muted">段階は評価点で決まる。評価点は、その能力が伸びる練習で優先して指導したときの 1 年分の伸びを 100 点とする（D ${RANKS[0]}・C ${RANKS[1]}・B ${RANKS[2]}・A ${RANKS[3]}・S ${RANKS[4]}）。どの能力も同じ物差し。総合力は 16 の能力の評価点の合計。</p>
+        body: `<p class="power-line">総合力 <b class="power-num">${Math.round(power(s))}</b> <span class="rank r${powerRank(s)}">${RANK_NAMES[powerRank(s)]}</span></p>
+            <p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats"><div class="srow head"><span>能力</span><span>能力値</span><span>評価</span></div><div class="srow head"><span>能力</span><span>能力値</span><span>評価</span></div>${rows}</div>
+            <p class="muted">能力値は戦いで使う実際の数。評価は、その能力の伸びやすさに合わせて付けた段階（E・D・C・B・A・S と + −）で、どの能力も同じ物差し。総合力は 16 の能力の評価の平均（E 0〜・D 100〜・C 200〜・B 300〜・A 400〜・S 500〜）。</p>
             <h3>職業の要件</h3>${reqRows(s)}
             <p class="muted">卒業式（3 月 20 日）で、要件を満たした職業から選べる。どれも満たさなければ村人になる。希望の職業で見る能力は少し伸びやすい。${s.grade < 3 ? `卒業まであと ${3 - s.grade} 年。` : '今年卒業する。'}</p>
             <h3>覚えた技</h3>${s.skills.length ? `<ul class="plain">${s.skills.map(id => `<li><b>${SKILLS[id].name}</b>　<small>${esc(SKILLS[id].desc)}（マナ ${SKILLS[id].mp}）</small></li>`).join('')}</ul>` : '<p class="muted">まだない。練習のマスで「技を練習する」を選ぶと覚えられる。</p>'}
@@ -968,7 +974,7 @@ function loadGame() {
         if ((p.saveVersion || 1) < 2) migrateTo2();
         if ((p.saveVersion || 1) < 3) migrateTo3();
         if ((p.saveVersion || 1) < 4) migrateTo4();
-        if ((p.saveVersion || 1) < 5) migrateTo5();
+        if ((p.saveVersion || 1) < 6) migrateTo5();
         game.saveVersion = SAVE_VERSION;
         return true;
     } catch (err) {
@@ -1013,7 +1019,7 @@ function migrateTo4() {
     game.alumni.forEach(grow);
     if (game.pending && Array.isArray(game.pending.enemies)) game.pending.enemies.forEach(e => fillStats(e.stats));
 }
-// v0.5 までのセーブ: 卒業生の総合力を新しい評価点で計算し直す
+// v0.6 までのセーブ: 卒業生の総合力を今の物差しで計算し直す
 function migrateTo5() {
     game.alumni.forEach(a => { fillStats(a.stats); a.power = Math.round(power(a)); a.rank = powerRank(a); });
 }
