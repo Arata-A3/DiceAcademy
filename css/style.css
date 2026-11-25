@@ -80,6 +80,7 @@ button:disabled { cursor: default; opacity: .45; }
 .sun { color: #ffd0c8; } .sat { color: #cfe3ff; }
 
 .branch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 12px 10px; font-size: 13px; }
+.branch[hidden] { display: none; }
 .route { border: 2px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 12px; }
 .route.on { border-color: var(--accent); background: var(--accent); color: #fff; }
 
@@ -157,6 +158,15 @@ dialog p { margin: 6px 0; line-height: 1.6; }
 .srow { display: grid; grid-template-columns: 7.5em 1fr 3.6em; align-items: center; gap: 6px; font-size: 13px; }
 .srow b { text-align: right; font-variant-numeric: tabular-nums; }
 .srow small { color: var(--accent); }
+.apts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 6px 0; }
+.apt { display: grid; grid-template-columns: 7.5em 1fr 3em; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.apt.can { color: inherit; font-weight: bold; }
+.apt b { text-align: right; font-variant-numeric: tabular-nums; }
+.apt .bar { position: relative; height: 8px; overflow: visible; }
+.apt .bar i { opacity: .45; }
+.apt.can .bar i { opacity: 1; }
+.apt .apt-line { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--accent); }
+.hope-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 3px; font-weight: normal; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
 .segs { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -261,7 +271,7 @@ body.in-battle { overflow: hidden; }
     .specials { margin-left: 0; padding-left: 6px; }
     .sq { width: 58px; height: 68px; }
     .sq.today { width: 70px; height: 78px; }
-    .stats { grid-template-columns: 1fr; }
+    .stats, .apts { grid-template-columns: 1fr; }
     .btn-text { display: none; }
 }
 @media (max-width: 380px) {

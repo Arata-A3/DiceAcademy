@@ -2,7 +2,7 @@
 'use strict';
 
 const SAVE_KEY = 'diceacademy_save';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 const BASE_YEAR = 2026;          // 暦の曜日を決めるための年（画面には出さない）
 const DAYS_IN_YEAR = 365;
 const STRIP_DAYS = 21;           // 暦の帯に出す日数
@@ -53,6 +53,8 @@ const ICON_PATHS = {
     close: '<path d="M6 6l12 12M18 6L6 18"/>',
     swords: '<path d="M4 4l9 9M4 4v3M4 4h3"/><path d="M20 4l-9 9M20 4v3M20 4h-3"/><path d="M9 15l-4 4M15 15l4 4M7 13l4 4M17 13l-4 4"/>',
     piece: '<circle cx="12" cy="7" r="4"/><path d="M6 21l2-9h8l2 9z"/>',
+    book: '<path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z"/><path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z"/>',
+    cap: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/><path d="M22 9v6"/>',
 };
 function icon(name, cls = '') {
     return `<svg class="ico ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ''}</svg>`;
@@ -93,6 +95,26 @@ function normalizeStudent(s) {
     if (!s.skillProg || typeof s.skillProg !== 'object') s.skillProg = {};
     s.fatigue = clamp(Math.round(s.fatigue), 0, 100);
     s.mood = clamp(Math.round(s.mood), 0, 100);
+}
+// 職業の適性（100 がふつう。APT_LINE 以上なら卒業のときに選べる）
+function aptitude(s, job) {
+    const v = k => s.stats[k] * (APT_SCALE[k] || 1);
+    const fav = job.favor.reduce((a, k) => a + v(k), 0) / job.favor.length;
+    const all = STATS.reduce((a, st) => a + v(st.key), 0) / STATS.length;
+    return all > 0 ? Math.round(fav / all * 100) : 100;
+}
+// 卒業のときに選べる職業（どれも基準に届かなければ、いちばん高い 1 つ）
+function eligibleJobs(s) {
+    const ok = JOBS.filter(j => aptitude(s, j) >= APT_LINE);
+    if (ok.length) return ok;
+    return [JOBS.slice().sort((a, b) => aptitude(s, b) - aptitude(s, a))[0]];
+}
+function aptRows(s) {
+    const pos = a => clamp((a - 60) / 90 * 100, 2, 100);
+    return `<div class="apts">${JOBS.map(j => {
+        const a = aptitude(s, j);
+        return `<div class="apt ${a >= APT_LINE ? 'can' : ''}"><span>${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}</span><span class="bar"><i style="width:${pos(a)}%"></i><b class="apt-line" style="left:${pos(APT_LINE)}%"></b></span><b>${a}</b></div>`;
+    }).join('')}</div>`;
 }
 function power(s, weights = {}) {
     return STATS.reduce((a, st) => a + (st.pct ? s.stats[st.key] * 8 : s.stats[st.key]) * (weights[st.key] || 1), 0);
@@ -172,7 +194,7 @@ function makeDefaultGame() {
     return {
         saveVersion: SAVE_VERSION, appearance: 'auto',
         year: 1, day: 0, fame: 50, gold: 100,
-        board: null, hand: [], specials: [], students: [], nextId: 1,
+        board: null, hand: [], specials: [], students: [], nextId: 1, alumni: [], records: [],
         message: '', pending: null, lastVersion: APP_VERSION, lastParty: [], lastTactic: 'balance', lastMode: 'stat',
     };
 }
@@ -375,6 +397,8 @@ function resolveFixed(key) {
     } else if (info.tournament) {
         game.pending = { kind: 'battle', mode: 'tournament', key, round: 0 };
         game.message = `${info.name}の日。`;
+    } else if (key === 'graduation') {
+        startGraduation(null);
     } else if (key === 'yearend') {
         game.pending = { kind: 'yearend' };
         game.message = '修了式。1 年が終わった。';
@@ -435,6 +459,7 @@ function renderBranch() {
 }
 function renderStudents() {
     const sorted = game.students.slice().sort((a, b) => b.grade - a.grade || a.id - b.id);
+    if (!sorted.length) { ui.students.innerHTML = '<p class="muted">生徒がいない。</p>'; return; }
     ui.students.innerHTML = sorted.map(s => `<button class="stu ${isInjured(s) ? 'injured' : ''}" data-id="${s.id}">
         <span class="face">${esc(s.name.slice(0, 1))}</span>
         <span class="stu-main"><span class="nm">${esc(s.name)} <small>${s.grade}年</small></span>
@@ -501,8 +526,9 @@ function openPending() {
     if (p.kind === 'practice') openPractice();
     else if (p.kind === 'event') openEvent();
     else if (p.kind === 'shop') openShop();
-    else if (p.kind === 'notice') showDialog({ title: p.title, body: p.html, buttons: [{ label: 'OK', primary: true, onClick: () => { game.pending = null; saveGame(); render(); } }] });
+    else if (p.kind === 'notice') showDialog({ title: p.title, body: p.html, buttons: [{ label: 'OK', primary: true, onClick: () => { game.pending = p.next ? { kind: p.next } : null; saveGame(); render(); } }] });
     else if (p.kind === 'yearend') openYearEnd();
+    else if (p.kind === 'graduation') openGraduation();
     else if (p.kind === 'battle') openFormation();
 }
 function openPractice() {
@@ -716,6 +742,7 @@ function finishTournament(p, wins) {
     const fame = wins * 6 + (wins === 4 ? 20 : 0);
     const gold = wins * 20 + (wins === 4 ? 100 : 0);
     game.fame += fame; game.gold += gold;
+    game.records.push({ year: game.year, name: st.info.name, result, wins });
     const team = p.party.map(id => game.students.find(s => s.id === id)).filter(Boolean);
     game.pending = {
         kind: 'notice', title: st.title,
@@ -725,14 +752,92 @@ function finishTournament(p, wins) {
     saveGame(); render();
 }
 
+// ---------- 卒業と進級 ----------
+function startGraduation(then) {
+    const seniors = game.students.filter(s => s.grade >= 3).sort((a, b) => a.id - b.id);
+    if (!seniors.length) {
+        game.pending = then ? { kind: then } : { kind: 'notice', title: '卒業式', html: '<p>今年卒業する 3 年生はいなかった。</p>' };
+        if (!then) game.message = '卒業式。卒業する 3 年生はいなかった。';
+        return;
+    }
+    game.pending = { kind: 'graduation', queue: seniors.map(s => s.id), done: [], then };
+    game.message = `卒業式。${seniors.length} 人の 3 年生が卒業する。`;
+}
+function openGraduation() {
+    const p = game.pending;
+    p.queue = p.queue.filter(id => game.students.some(s => s.id === id));
+    if (!p.queue.length) { finishGraduation(); return; }
+    const s = game.students.find(x => x.id === p.queue[0]);
+    const ok = eligibleJobs(s);
+    const note = aptitude(s, ok[0]) < APT_LINE ? `どの職業も基準（${APT_LINE}）に届かなかったので、いちばん向いている職業になる。`
+        : ok.length === 1 ? `基準（${APT_LINE}）を超えた職業は 1 つだけ。` : `基準（${APT_LINE}）を超えた職業から、進む道を選んでください。`;
+    showDialog({
+        title: `卒業式: ${s.name}`, wide: true,
+        body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　総合 ${Math.round(power(s))}　大会の勝ち ${s.wins}　技 ${s.skills.length}</p>
+            <p class="muted">職業の適性（その職業で見る能力が、${esc(s.name)} の能力の平均の何 % か）。縦の線が基準。</p>
+            ${aptRows(s)}<p>${note}</p>`,
+        buttons: ok.map(j => ({ label: `${icon('cap')}${j.name}${j.key === s.hope ? '（希望）' : ''}として卒業`, primary: j.key === s.hope || ok.length === 1, onClick: () => graduate(s, j) })),
+    });
+}
+function graduate(s, job) {
+    const p = game.pending;
+    game.alumni.push({
+        id: s.id, name: s.name, year: game.year, job: job.key, hope: s.hope, wins: s.wins,
+        power: Math.round(power(s)), stats: { ...s.stats }, skills: s.skills.slice(),
+    });
+    game.students = game.students.filter(x => x.id !== s.id);
+    game.lastParty = game.lastParty.filter(id => id !== s.id);
+    p.queue = p.queue.filter(id => id !== s.id);
+    p.done.push({ name: s.name, job: job.key, hope: s.hope });
+    saveGame(); render();
+}
+function finishGraduation() {
+    const p = game.pending;
+    const list = p.done.map(d => `<li><b>${esc(d.name)}</b>　${JOB_BY_KEY[d.job].name}${d.job === d.hope ? '（希望どおり）' : `（希望は ${JOB_BY_KEY[d.hope].name}）`}</li>`).join('');
+    game.message = `卒業式。${p.done.map(d => `${d.name}（${JOB_BY_KEY[d.job].name}）`).join('、')} が卒業した。`;
+    game.pending = { kind: 'notice', title: '卒業式', html: `<p>${p.done.length} 人が卒業していった。</p><ul class="plain">${list}</ul><p class="muted">卒業生は「歴史」で見られる。</p>` };
+    if (p.then) game.pending.next = p.then;
+    saveGame(); render();
+}
 function openYearEnd() {
-    const rows = game.students.slice().sort((a, b) => b.grade - a.grade).map(s => `<tr><td>${esc(s.name)}</td><td>${s.grade}年</td><td>${JOB_BY_KEY[s.hope].name}</td><td>${Math.round(power(s))}</td><td>${s.wins}</td></tr>`).join('');
+    // 卒業式を迎えずに修了式に来た 3 年生（古いセーブなど）は、先に卒業させる
+    if (game.students.some(s => s.grade >= 3)) { startGraduation('yearend'); saveGame(); render(); return; }
+    const rows = game.students.slice().sort((a, b) => b.grade - a.grade || a.id - b.id).map(s => `<tr><td>${esc(s.name)}</td><td>${s.grade}年 → ${s.grade + 1}年</td><td>${JOB_BY_KEY[s.hope].name}</td><td>${Math.round(power(s))}</td><td>${s.wins}</td></tr>`).join('');
+    const recs = game.records.filter(r => r.year === game.year).map(r => `<li>${esc(r.name)}: ${esc(r.result)}</li>`).join('');
+    const grads = game.alumni.filter(a => a.year === game.year).map(a => `${esc(a.name)}（${JOB_BY_KEY[a.job].name}）`).join('、');
     showDialog({
         title: `${game.year}年目が終わりました`, wide: true,
         body: `<p>知名度 ${game.fame}　所持金 ${game.gold} ゴールド</p>
-            <table class="tbl"><tr><th>名前</th><th>学年</th><th>希望</th><th>総合</th><th>大会の勝ち</th></tr>${rows}</table>
-            <p class="muted">進級と卒業、職業と勇者の認定は次の版から入ります。</p>`,
-        buttons: [{ label: '1年目からもう一度', primary: true, onClick: () => { newGame(); } }],
+            ${recs ? `<h3>今年の大会</h3><ul class="plain">${recs}</ul>` : ''}
+            ${grads ? `<h3>今年の卒業生</h3><p>${grads}</p>` : ''}
+            <h3>進級する生徒</h3>${rows ? `<table class="tbl"><tr><th>名前</th><th>学年</th><th>希望</th><th>総合</th><th>大会の勝ち</th></tr>${rows}</table>` : '<p class="muted">いない。</p>'}
+            <p class="muted">春休みのあいだに疲れとけがは治る。次の日は入学式。</p>`,
+        buttons: [{ label: `${icon('arrow')}${game.year + 1}年目へ`, primary: true, onClick: startNewYear }],
+    });
+}
+function startNewYear() {
+    game.year++;
+    game.students.forEach(s => { s.grade++; s.fatigue = 0; s.injuredUntil = -1; s.mood = Math.max(s.mood, 55); });
+    game.board = generateBoard();
+    game.day = 0;
+    game.pending = null;
+    selected = null;
+    refillHand();
+    game.message = `${game.year}年目が始まった。今日は入学式です。`;
+    resolveSquare(1);
+}
+function openAlumni() {
+    const years = [...new Set([...game.alumni.map(a => a.year), ...game.records.map(r => r.year)])].sort((a, b) => b - a);
+    const html = years.map(y => {
+        const recs = game.records.filter(r => r.year === y);
+        const al = game.alumni.filter(a => a.year === y);
+        return `<h3>${y}年目</h3>
+            ${recs.length ? `<p>大会: ${recs.map(r => `${esc(r.name)} ${esc(r.result)}`).join('、')}</p>` : ''}
+            ${al.length ? `<table class="tbl"><tr><th>卒業生</th><th>職業</th><th>希望</th><th>総合</th><th>大会の勝ち</th><th>技</th></tr>${al.map(a => `<tr><td>${esc(a.name)}</td><td><b>${JOB_BY_KEY[a.job].name}</b></td><td>${JOB_BY_KEY[a.hope].name}</td><td>${a.power}</td><td>${a.wins}</td><td>${a.skills.length}</td></tr>`).join('')}</table>` : ''}`;
+    }).join('');
+    showDialog({
+        title: '学園の歴史', wide: true,
+        body: html || '<p class="muted">まだ記録がない。大会の結果と、3 月 20 日の卒業式で卒業した生徒がここに残る。</p>',
     });
 }
 function openStudent(id) {
@@ -746,6 +851,8 @@ function openStudent(id) {
     showDialog({
         title: `${s.name}（${s.grade}年）`, wide: true,
         body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>
+            <h3>職業の適性</h3>${aptRows(s)}
+            <p class="muted">卒業式（3 月 20 日）で、適性が ${APT_LINE} 以上の職業から選べる（希望の職業とは限らない）。${s.grade < 3 ? `卒業まであと ${3 - s.grade} 年。` : '今年卒業する。'}</p>
             <h3>覚えた技</h3>${s.skills.length ? `<ul class="plain">${s.skills.map(id => `<li><b>${SKILLS[id].name}</b>　<small>${esc(SKILLS[id].desc)}（マナ ${SKILLS[id].mp}）</small></li>`).join('')}</ul>` : '<p class="muted">まだない。練習のマスで「技を練習する」を選ぶと覚えられる。</p>'}
             ${Object.entries(s.skillProg).filter(([l, v]) => v > 0 && nextSkill(s, l)).map(([l, v]) => `<p class="muted">練習中: ${SKILLS[nextSkill(s, l)].name} ${Math.round(v)}%</p>`).join('')}`,
     });
@@ -819,6 +926,7 @@ function loadGame() {
         game = Object.assign(makeDefaultGame(), p);
         game.students.forEach(normalizeStudent);
         if ((p.saveVersion || 1) < 2) migrateTo2();
+        if ((p.saveVersion || 1) < 3) migrateTo3();
         game.saveVersion = SAVE_VERSION;
         return true;
     } catch (err) {
@@ -835,6 +943,15 @@ function migrateTo2() {
     game.board.branches.forEach(b => b.routes.forEach(r => { if (r.key === 'forest' && b.start > game.day) r.squares = r.squares.map(q => Math.random() < 0.3 ? { type: 'battle' } : q); }));
     game.students.forEach(s => { if (s.grade >= 2 && !s.skills.length) s.skills.push(SKILL_LINES[JOB_LINE[s.hope]][0]); });
 }
+// v0.2 までのセーブ: 暦に卒業式を足す（まだ過ぎていなければ）
+function migrateTo3() {
+    if (!Array.isArray(game.alumni)) game.alumni = [];
+    if (!Array.isArray(game.records)) game.records = [];
+    const gi = dayIndexOf(3, 20);
+    if (game.day >= gi || game.board.days.some(d => d.type === 'fixed' && d.key === 'graduation')) return;
+    game.board.branches = game.board.branches.filter(b => !(gi >= b.start - 1 && gi <= b.start + b.len));
+    game.board.days[gi] = { type: 'fixed', key: 'graduation' };
+}
 function fullReset() {
     if (!confirm('今までのデータを消して、最初からやり直しますか？（元に戻せません）')) return;
     resetting = true;
@@ -850,6 +967,7 @@ function init() {
     ui.version.textContent = `v${APP_VERSION}`;
     ui.version.addEventListener('click', openHistory);
     $('cal-btn').addEventListener('click', () => openCalendar());
+    $('hist-btn').addEventListener('click', openAlumni);
     initBattleUI();
     $('set-btn').addEventListener('click', openSettings);
     ui.go.addEventListener('click', go);

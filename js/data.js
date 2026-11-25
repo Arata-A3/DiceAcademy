@@ -27,6 +27,10 @@ const JOBS = [
     { key: 'thief', name: '盗賊', favor: ['mspd', 'pen', 'crit'] },
 ];
 const JOB_BY_KEY = Object.fromEntries(JOBS.map(j => [j.key, j]));
+// 職業の適性: その職業で見る能力が、生徒自身の能力の平均の何 % か（100 がふつう）
+// 割合の能力は、ほかの能力と同じくらいの大きさになるよう掛けてから比べる
+const APT_SCALE = { crit: 8, pen: 20, ten: 16 };
+const APT_LINE = 110;            // 卒業のとき、適性がこれ以上の職業から選べる
 
 // 練習の種類。gains: 能力ごとの基本の伸び
 const PRACTICES = [
@@ -70,7 +74,8 @@ const FIXED_EVENTS = [
     { month: 5, day: 20, key: 'rookie', name: '新人戦', tournament: true, desc: '1 年生だけの個人戦' },
     { month: 7, day: 20, key: 'sword', name: '剣技大会', tournament: true, desc: '物理が有利な個人戦' },
     { month: 12, day: 10, key: 'team', name: '学園対抗戦', tournament: true, desc: '4 人の団体戦' },
-    { month: 3, day: 31, key: 'yearend', name: '修了式' },
+    { month: 3, day: 20, key: 'graduation', name: '卒業式', desc: '3 年生が卒業し、職業が決まる' },
+    { month: 3, day: 31, key: 'yearend', name: '修了式', desc: '1 年が終わり、みんな 1 つ上の学年になる' },
 ];
 
 // 特別な札
