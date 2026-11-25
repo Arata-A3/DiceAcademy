@@ -57,6 +57,34 @@ JOB_BY_KEY.villager = VILLAGER;
 // 希望の職業で見る能力は、練習と戦いで少し伸びやすい
 const HOPE_GROWTH = 1.2;
 
+// 素質: 入学時に決まる伸びやすさ。知名度が高いほど良い素質の生徒が来やすいが、ムラもある
+// weight: 来やすさ（fame は知名度 1 あたりに足される分）、growth: 練習と戦いの伸びの倍率、favor: 希望の職業の能力の上乗せの倍率
+const POTENTIALS = [
+    { key: 'normal', name: 'ふつう', weight: 70, fame: 0, growth: 1.0, favor: 1.0 },
+    { key: 'promising', name: '有望', weight: 25, fame: 0.12, growth: 1.15, favor: 1.3 },
+    { key: 'prodigy', name: '逸材', weight: 5, fame: 0.04, growth: 1.3, favor: 1.6 },
+];
+const POTENTIAL_BY_KEY = Object.fromEntries(POTENTIALS.map(p => [p.key, p]));
+// 指導の効果: 知名度 1 あたり +COACH_FAME_RATE（上限 COACH_FAME_MAX）。名のある学園には良い教え手と設備が集まる
+const COACH_FAME_RATE = 0.001;
+const COACH_FAME_MAX = 0.4;
+// 1 回の練習で指導できる人数: 在校生 COACH_PER 人に 1 人（最低 COACH_MIN 人）
+const COACH_PER = 3;
+const COACH_MIN = 1;
+
+// 名声: 生徒ごとの在学中の実績
+// 大会の試合に勝つと win、優勝すると title をさらに足す。団体戦は team 倍。小さな戦いに勝つと small
+const RENOWN = { win: 1, title: 3, team: 2, small: 0.2 };
+// 英傑録に載る名声と、勇者になる名声・総合力
+const ROSTER_RENOWN = 14;
+const HERO_RENOWN = 28;
+const HERO_POWER = 210;
+// 英傑録に載った人の職業の名前
+const ELITE_NAMES = { warrior: '剣聖', knight: '聖騎士', mage: '大魔法士', priest: '大司教', hunter: '天弓', thief: '密偵', villager: '村の英雄' };
+const HERO_NAME = '勇者';
+// 団体戦の相手の強さの倍率（4 人そろった学園でないと勝てない強さ）
+const TEAM_RIVAL_SCALE = 0.8;
+
 // 練習の種類。gains: 能力ごとの基本の伸び
 const PRACTICES = [
     { key: 'sword', name: '剣術', gains: { atk: 6, aspd: 2 } },

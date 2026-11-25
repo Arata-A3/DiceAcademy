@@ -179,6 +179,19 @@ dialog p { margin: 6px 0; line-height: 1.6; }
 .req-item b { font-variant-numeric: tabular-nums; }
 .req-can { color: #fff; background: var(--accent); border-radius: 4px; padding: 0 4px; font-weight: normal; }
 .hope-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 3px; font-weight: normal; }
+.pot { font-weight: bold; }
+.pot-promising { color: #3f7fd0; } .pot-prodigy { color: #c9952b; }
+.hero-tag, .elite-tag { font-size: 12px; border-radius: 4px; padding: 0 4px; }
+.hero-tag { color: #fff; background: #c9952b; } .elite-tag { color: var(--accent); border: 1px solid var(--accent); }
+.hist-body { margin-top: 10px; }
+.roster { display: grid; gap: 6px; }
+.ros { display: flex; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.ros .ros-mark { color: var(--accent); } .ros .ros-mark .ico { width: 22px; height: 22px; }
+.ros-title { font-weight: bold; color: var(--accent); }
+.ros.hero { border: 2px solid #c9952b; background: rgba(201, 149, 43, .12); }
+.ros.hero .ros-mark, .ros.hero .ros-title { color: #c9952b; }
+#dlg.hero { border: 2px solid #c9952b; }
+.hero-big { font-size: 20px; font-weight: bold; color: #c9952b; text-align: center; margin: 6px 0 10px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
 .segs { display: flex; gap: 6px; flex-wrap: wrap; }
