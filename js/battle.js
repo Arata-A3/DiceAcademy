@@ -76,6 +76,14 @@ function makeMonsters(day) {
     const lv = enemyLevel(day) * (n === 3 ? 1.05 : 1.3);
     return Array.from({ length: n }, () => { const m = pick(pool); return { name: m.name, stats: statsFromWeights(lv, m.w), skills: m.skills.slice() }; });
 }
+// 討伐の相手: ボス 1 体と手下
+function makeQuestEnemies(q, day) {
+    const boss = QUEST_BOSSES.find(b => b.name === q.boss) || QUEST_BOSSES[0];
+    const lv = enemyLevel(day) * QUEST_LEVELS[q.level].lv;
+    const pool = MONSTERS.filter(m => m.from <= day);
+    const minions = Array.from({ length: q.level + 1 }, () => { const m = pick(pool); return { name: m.name, stats: statsFromWeights(lv * 0.8, m.w), skills: m.skills.slice() }; });
+    return [{ name: boss.name, stats: statsFromWeights(lv * 1.4, boss.w), skills: boss.skills.slice(), sub: 'ボス' }, ...minions];
+}
 function makeRival(day, strength, onlyJobs, rookie) {
     const job = pick(onlyJobs ? JOBS.filter(j => onlyJobs.includes(j.key)) : JOBS);
     const w = {}; job.favor.forEach(k => { w[k] = 1.35; });
@@ -294,7 +302,7 @@ function startBattle(opts) {
     // opts: { title, allies: [student], enemies: [src], tactic, mods, onEnd(result) }
     battle = {
         title: opts.title, mods: opts.mods || null, onEnd: opts.onEnd,
-        allies: opts.allies.map((s, i) => makeUnit({ ...s, sub: `${s.grade}年`, skills: s.skills }, 'A', i)),
+        allies: opts.allies.map((s, i) => makeUnit({ ...s, sub: s.sub || `${s.grade}年`, skills: s.skills }, 'A', i)),
         enemies: opts.enemies.map((e, i) => makeUnit({ ...e, sub: e.job || e.sub || '' }, 'B', i)),
         tactics: { A: opts.tactic || 'balance', B: 'balance' },
         log: [], last: null, turns: 0, over: false, win: false, speed: 'normal', timer: null, trumpUsed: false, trumpCard: null,

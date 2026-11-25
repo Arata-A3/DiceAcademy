@@ -2,7 +2,7 @@
     --bg: #f4ecdc; --panel: #fffaf0; --panel2: #e9dcc0; --text: #2a2433; --muted: #6f6578; --line: #d8c9a8;
     --bar: #3b2f4a; --bar-text: #f6efe0; --accent: #c0563a; --gold: #e0a92e;
     --sq-practice: #4f7fc4; --sq-rest: #4f9a62; --sq-event: #d0832a; --sq-shop: #9064b8; --sq-treasure: #b8921c;
-    --sq-injury: #c0563a; --sq-fixed: #2a2433; --sq-battle: #8a3b3b;
+    --sq-injury: #c0563a; --sq-fixed: #2a2433; --sq-battle: #8a3b3b; --sq-quest: #5b2a6e;
     --fat: #d0832a; --mood: #4f9a62; --statbar: #4f7fc4;
     color-scheme: light;
 }
@@ -67,6 +67,13 @@ button:disabled { cursor: default; opacity: .45; }
 .sq-practice { background: var(--sq-practice); } .sq-rest { background: var(--sq-rest); } .sq-event { background: var(--sq-event); }
 .sq-shop { background: var(--sq-shop); } .sq-treasure { background: var(--sq-treasure); } .sq-injury { background: var(--sq-injury); }
 .sq-battle { background: var(--sq-battle); }
+.sq-quest { background: var(--sq-quest); box-shadow: inset 0 0 0 2px #e07a4f; }
+.questbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 4px 12px 8px; font-size: 13px; }
+.questbar[hidden] { display: none; }
+.questbar b { color: #e07a4f; }
+.helpers { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px; }
+.helper { text-align: left; border: 2px solid var(--line); background: var(--panel2); border-radius: 10px; padding: 6px 8px; }
+.helper[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .sq-fixed { background: var(--sq-fixed); box-shadow: inset 0 0 0 2px var(--gold); }
 .sq.today { width: 80px; height: 86px; box-shadow: 0 0 0 3px var(--gold); }
 .sq.today.sq-fixed { box-shadow: inset 0 0 0 2px var(--gold), 0 0 0 3px var(--gold); }

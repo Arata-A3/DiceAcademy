@@ -2,7 +2,7 @@
 'use strict';
 
 const SAVE_KEY = 'diceacademy_save';
-const SAVE_VERSION = 7;
+const SAVE_VERSION = 8;
 const BASE_YEAR = 2026;          // 暦の曜日を決めるための年（画面には出さない）
 const DAYS_IN_YEAR = 365;
 const STRIP_DAYS = 21;           // 暦の帯に出す日数
@@ -54,6 +54,7 @@ const ICON_PATHS = {
     swords: '<path d="M4 4l9 9M4 4v3M4 4h3"/><path d="M20 4l-9 9M20 4v3M20 4h-3"/><path d="M9 15l-4 4M15 15l4 4M7 13l4 4M17 13l-4 4"/>',
     piece: '<circle cx="12" cy="7" r="4"/><path d="M6 21l2-9h8l2 9z"/>',
     book: '<path d="M3 5h6a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H3z"/><path d="M21 5h-6a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h7z"/>',
+    skull: '<path d="M12 3a8 8 0 0 0-8 8c0 3 1.5 5 4 6v3h8v-3c2.5-1 4-3 4-6a8 8 0 0 0-8-8z"/><circle cx="9" cy="11" r="1.5"/><circle cx="15" cy="11" r="1.5"/><path d="M10 20v-2M14 20v-2"/>',
     crown: '<path d="M3 8l4 4 5-7 5 7 4-4-2 11H5z"/>',
     cap: '<path d="M2 9l10-5 10 5-10 5z"/><path d="M6 11v5c3 2 9 2 12 0v-5"/><path d="M22 9v6"/>',
 };
@@ -89,7 +90,7 @@ function coachMax() { return Math.max(COACH_MIN, Math.ceil(game.students.length 
 function coachMul() { return 1 + Math.min(COACH_FAME_MAX, game.fame * COACH_FAME_RATE); }
 // 英傑録・勇者の判定
 function renownTier(renown, pw) {
-    if (renown >= HERO_RENOWN && pw >= HERO_POWER) return 'hero';
+    if (renown + pw >= HERO_SUM) return 'hero';
     if (renown >= ROSTER_RENOWN) return 'elite';
     return null;
 }
@@ -98,14 +99,15 @@ function jobTitle(a) {
     if (a.tier === 'elite') return ELITE_NAMES[a.job] || JOB_BY_KEY[a.job].name;
     return JOB_BY_KEY[a.job].name;
 }
-function fmtRenown(v) { return String(Math.round(v * 10) / 10); }
+function fmtRenown(v) { return String(Math.round(v)); }
 function potentialTag(s) { const p = potentialOf(s); return `<span class="pot pot-${p.key}">${p.name}</span>`; }
 // 名声と、卒業したらどうなるかの見込み
 function renownLine(s) {
     const t = renownTier(s.renown || 0, power(s));
-    const next = t === 'hero' ? `勇者になれる（名声 ${HERO_RENOWN}・総合力 ${HERO_POWER} 以上）`
-        : t === 'elite' ? `英傑録に載る。勇者には名声 ${HERO_RENOWN}・総合力 ${HERO_POWER} 以上`
-            : `英傑録には名声 ${ROSTER_RENOWN} 以上`;
+    const sum = Math.round((s.renown || 0) + power(s));
+    const next = t === 'hero' ? `勇者になれる（名声 ＋ 総合力 = ${sum} / ${HERO_SUM}）`
+        : t === 'elite' ? `英傑録に載る。勇者には名声 ＋ 総合力が ${HERO_SUM} 以上（今 ${sum}）`
+            : `英傑録には名声 ${ROSTER_RENOWN} 以上。勇者には名声 ＋ 総合力が ${HERO_SUM} 以上（今 ${sum}）`;
     return `名声 <b>${fmtRenown(s.renown || 0)}</b> <small class="muted">（${next}）</small>`;
 }
 function usedNameSet() { return new Set(game.students.map(s => s.name)); }
@@ -251,6 +253,7 @@ function setSquareAt(i, sq) {
 }
 function fixedInfo(key) { return FIXED_EVENTS.find(f => f.key === key); }
 function squareName(sq) {
+    if (sq.type === 'quest') return game.quest ? `討伐: ${game.quest.boss}` : '討伐';
     if (sq.type === 'fixed') return fixedInfo(sq.key).name;
     if (sq.type === 'practice') return PRACTICE_BY_KEY[sq.sub].name;
     return SQUARES[sq.type].name;
@@ -275,7 +278,7 @@ function makeDefaultGame() {
     return {
         saveVersion: SAVE_VERSION, appearance: 'auto',
         year: 1, day: 0, fame: 50, gold: 100,
-        board: null, hand: [], specials: [], students: [], nextId: 1, alumni: [], records: [],
+        board: null, hand: [], specials: [], students: [], nextId: 1, alumni: [], records: [], quest: null, questCount: 0,
         message: '', pending: null, lastVersion: APP_VERSION, lastParty: [], lastTactic: 'balance', lastMode: 'stat',
     };
 }
@@ -312,6 +315,12 @@ function moveTo(target, mul) {
     game.students.forEach(s => { s.fatigue -= passed; s.mood += Math.sign(55 - s.mood) * Math.min(Math.abs(55 - s.mood), passed); normalizeStudent(s); });
     game.day = target;
     selected = null;
+    if (game.quest && game.day > game.quest.deadline) {
+        const q = game.quest;
+        endQuest();
+        game.fame = Math.max(0, game.fame - QUEST_FAIL_FAME);
+        setTimeout(() => toast(`討伐の依頼「${q.boss}」の期限が過ぎた。知名度 -${QUEST_FAIL_FAME}`), 0);
+    }
     resolveSquare(mul);
 }
 function playHand(index) {
@@ -338,7 +347,7 @@ function playSpecial(index) {
 function openReplan(index) {
     const opts = [];
     for (let i = game.day + 1; i <= Math.min(game.day + LOOKAHEAD, DAYS_IN_YEAR - 1); i++) {
-        if (squareAt(i).type !== 'fixed') opts.push(i);
+        if (squareAt(i).type !== 'fixed' && squareAt(i).type !== 'quest') opts.push(i);
     }
     if (!opts.length) { toast('変えられるマスがありません'); return; }
     showDialog({
@@ -373,6 +382,10 @@ function resolveSquare(mul) {
             game.message = `休みの日。全員の疲れが取れた。${careful}`;
             break;
         case 'event': {
+            if (!game.quest && game.questCount < QUEST_MAX_PER_YEAR && Math.random() < QUEST_CHANCE + game.fame * QUEST_CHANCE_FAME) {
+                const q = makeQuest();
+                if (q) { game.pending = { kind: 'questOffer', q }; break; }
+            }
             const healthy = game.students.filter(s => !isInjured(s));
             const ev = rand(0, EVENTS.length - 1);
             const st = pick(healthy.length ? healthy : game.students);
@@ -402,6 +415,10 @@ function resolveSquare(mul) {
             break;
         }
         case 'battle': game.pending = { kind: 'battle', mode: 'small' }; break;
+        case 'quest':
+            if (game.quest) game.pending = { kind: 'battle', mode: 'quest' };
+            else { setSquareAt(game.day, sq.orig || { type: 'rest' }); game.message = '討伐の依頼はもう終わっていた。'; }
+            break;
         case 'fixed': resolveFixed(sq.key); break;
     }
     saveGame();
@@ -493,6 +510,7 @@ function render() {
     ui.next.innerHTML = nf ? `${esc(nf.info.name)}まで ${nf.i - game.day}日` : '';
     renderStrip();
     renderBranch();
+    renderQuestBar();
     renderStudents();
     renderHand();
     ui.message.textContent = game.message;
@@ -606,6 +624,7 @@ function openPending() {
     else if (p.kind === 'notice') showDialog({ title: p.title, body: p.html, buttons: [{ label: 'OK', primary: true, onClick: () => { game.pending = p.nextPending || (p.next ? { kind: p.next } : null); saveGame(); render(); } }], hero: p.hero });
     else if (p.kind === 'yearend') openYearEnd();
     else if (p.kind === 'graduation') openGraduation();
+    else if (p.kind === 'questOffer') openQuestOffer();
     else if (p.kind === 'battle') openFormation();
 }
 function openPractice() {
@@ -696,6 +715,7 @@ function openShop() {
 const ROUND_NAMES = ['1 回戦', '準々決勝', '準決勝', '決勝'];
 function battleSetup(p) {
     if (p.mode === 'small') return { title: '小さな戦い', max: 4, pool: game.students.filter(s => !isInjured(s)) };
+    if (p.mode === 'quest') return { title: `魔物討伐: ${game.quest.boss}（${QUEST_LEVELS[game.quest.level].name}）`, max: 4, pool: game.students.filter(s => !isInjured(s)), quest: true };
     const info = fixedInfo(p.key);
     const individual = p.key !== 'team';
     const pool = game.students.filter(s => !isInjured(s) && (p.key !== 'rookie' || s.grade === 1));
@@ -714,6 +734,7 @@ function openFormation() {
     if (p.mode === 'tournament' && p.round > 0 && p.party) { openNextMatch(); return; }
     const st = battleSetup(p);
     if (p.mode === 'small' && !p.enemies) { p.enemies = makeMonsters(game.day); saveGame(); }
+    if (p.mode === 'quest' && !p.enemies) { p.enemies = makeQuestEnemies(game.quest, game.day); saveGame(); }
     if (p.mode === 'tournament' && !p.schools) { p.schools = shuffle(RIVAL_SCHOOLS).slice(0, 4); saveGame(); }
     if (!st.pool.length) {
         game.pending = { kind: 'notice', title: st.title, html: '<p>出られる生徒がいなかった。</p>' };
@@ -724,12 +745,19 @@ function openFormation() {
     // 足りない分は総合の高い順に埋める
     st.pool.slice().sort((a, b) => power(b) - power(a)).forEach(s => { if (chosen.size < st.max) chosen.add(s.id); });
     let tactic = game.lastTactic || 'balance';
-    const foeText = p.mode === 'small' ? `相手: ${p.enemies.map(e => esc(e.name)).join('、')}` : `${st.individual ? '学校代表を 1 人選んでください。' : '出場する 4 人を選んでください。'}勝ち抜くと ${ROUND_NAMES.length} 試合あります。`;
+    const helpers = p.mode === 'quest' ? availableHelpers() : [];
+    let helper = null;
+    const foeText = p.mode !== 'tournament' ? `相手: ${p.enemies.map(e => esc(e.name)).join('、')}` : `${st.individual ? '学校代表を 1 人選んでください。' : '出場する 4 人を選んでください。'}勝ち抜くと ${ROUND_NAMES.length} 試合あります。`;
     const body = `<p>${foeText}</p>
         <div class="pick">${st.pool.map(s => `<button class="pick-stu" data-id="${s.id}" aria-pressed="${chosen.has(s.id)}"><b>${esc(s.name)}</b> ${s.grade}年<br><small>総合力 ${powerText(s)}・疲れ ${s.fatigue}・技 ${s.skills.length}</small></button>`).join('')}</div>
         <p style="margin-top:12px">作戦</p><div class="segs">${Object.entries(TACTICS).map(([k, t]) => `<button class="seg ${tactic === k ? 'on' : ''}" data-tactic="${k}" aria-pressed="${tactic === k}" title="${esc(t.desc)}">${t.name}</button>`).join('')}</div>
-        <p class="muted" id="tactic-desc">${esc(TACTICS[tactic].desc)}</p>`;
-    const buttons = [{ label: `${icon('swords')}戦う`, primary: true, id: 'fight-go', onClick: () => beginBattle([...chosen], tactic) }];
+        <p class="muted" id="tactic-desc">${esc(TACTICS[tactic].desc)}</p>
+        ${p.mode === 'quest' ? `<p style="margin-top:12px">助っ人（英傑録の卒業生。今回予定が空いている人から 1 人まで）</p>
+            ${helpers.length ? `<div class="helpers">${helpers.map(a => `<button class="helper" data-hid="${a.id}" aria-pressed="false"><b>${esc(a.name)}</b> <span class="ros-title">${jobTitle(a)}</span><br><small>総合力 ${Math.round(power(a))}（${RANK_NAMES[powerRank(a)]}）・${a.year}年目卒業</small></button>`).join('')}</div>
+            <p class="muted">助っ人を呼ぶと勝ちやすいが、生徒の名声は ${Math.round(HELPER_RENOWN_MUL * 100)}% になる。</p>`
+                : `<p class="muted">${game.alumni.some(a => a.tier) ? '今回は予定の空いている卒業生がいない。' : 'まだ英傑録に誰も載っていない。'}</p>`}` : ''}`;
+    const buttons = [{ label: `${icon('swords')}戦う`, primary: true, id: 'fight-go', onClick: () => { p.helper = helper; beginBattle([...chosen], tactic); } }];
+    if (p.mode === 'quest') buttons.unshift({ label: '今回は見送る', ghost: true, onClick: () => { game.pending = null; game.message = `討伐は見送った。期限（${dateLabel(game.quest.deadline)}）までに、ほかの討伐のマスでも挑める。`; saveGame(); render(); } });
     if (p.mode === 'small') buttons.unshift({ label: '逃げる', ghost: true, onClick: () => { game.pending = null; game.message = '戦わずに引き返した。'; saveGame(); render(); } });
     showDialog({
         title: st.title, body, buttons,
@@ -743,6 +771,11 @@ function openFormation() {
                 if (chosen.has(id)) chosen.delete(id);
                 else { if (chosen.size >= st.max) chosen.delete([...chosen][0]); chosen.add(id); }
                 sync();
+            }));
+            ui.dlgBody.querySelectorAll('.helper').forEach(el => el.addEventListener('click', () => {
+                const id = Number(el.dataset.hid);
+                helper = helper === id ? null : id;
+                ui.dlgBody.querySelectorAll('.helper').forEach(e2 => e2.setAttribute('aria-pressed', Number(e2.dataset.hid) === helper));
             }));
             ui.dlgBody.querySelectorAll('.seg[data-tactic]').forEach(el => el.addEventListener('click', () => {
                 tactic = el.dataset.tactic;
@@ -765,11 +798,102 @@ function runMatch() {
     const p = game.pending;
     const team = p.party.map(id => game.students.find(s => s.id === id)).filter(Boolean);
     const st = battleSetup(p);
-    const enemies = p.mode === 'small' ? p.enemies : tournamentFoes(p);
-    const title = p.mode === 'small' ? '小さな戦い' : `${st.info.name} ${ROUND_NAMES[p.round]}: ${p.schools[p.round]}`;
+    const enemies = p.mode === 'tournament' ? tournamentFoes(p) : p.enemies;
+    const title = p.mode === 'small' ? '小さな戦い' : p.mode === 'quest' ? st.title : `${st.info.name} ${ROUND_NAMES[p.round]}: ${p.schools[p.round]}`;
+    const h = p.mode === 'quest' && p.helper ? game.alumni.find(a => a.id === p.helper) : null;
+    if (h) team.push({ name: h.name, stats: h.stats, skills: h.skills, sub: `助っ人・${jobTitle(h)}` });
     const mods = p.key === 'sword' ? { phys: 1.3, mag: 0.7 } : null;
     renderHand();
     startBattle({ title, allies: team, enemies, tactic: p.tactic, mods, onEnd: afterMatch });
+}
+// ---------- 魔物討伐 ----------
+function makeQuest() {
+    const f = game.fame;
+    const level = Number(weighted({ 0: 60, 1: f / 5, 2: Math.max(0, f - 150) / 6 }));
+    const deadline = Math.min(DAYS_IN_YEAR - 2, game.day + QUEST_DAYS);
+    const cands = [];
+    for (let i = game.day + 2; i <= deadline; i++) {
+        const sq = game.board.days[i];
+        if (sq.type !== 'fixed' && sq.type !== 'quest' && !branchAt(i)) cands.push(i);
+    }
+    if (cands.length < 2) return null;
+    return { boss: pick(QUEST_BOSSES).name, level, deadline, days: shuffle(cands).slice(0, rand(2, 3)).sort((a, b) => a - b) };
+}
+function openQuestOffer() {
+    const q = game.pending.q;
+    const L = QUEST_LEVELS[q.level];
+    showDialog({
+        title: '魔物討伐の依頼',
+        body: `<p>近くの村から、<b>${esc(q.boss)}</b> を退治してほしいと依頼が届いた。</p>
+            <table class="tbl"><tr><th>難しさ</th><td>${L.name}</td></tr><tr><th>期限</th><td>${dateLabel(q.deadline)}（あと ${q.deadline - game.day} 日）</td></tr>
+            <tr><th>お礼</th><td>${L.gold} ゴールド・知名度 +${L.fame}・出た生徒の名声 +${L.renown}</td></tr></table>
+            <p class="muted">引き受けると、期限までの日に討伐のマスが ${q.days.length} つ出る（${q.days.map(d => dateLabel(d)).join('、')}）。どれかに止まると挑める。期限を逃すか負けると知名度 -${QUEST_FAIL_FAME}。英傑録の卒業生を助っ人に呼べる。</p>`,
+        buttons: [
+            { label: '断る', ghost: true, onClick: () => { game.pending = null; game.message = `${q.boss} の討伐の依頼を断った。`; saveGame(); render(); } },
+            { label: `${icon('skull')}引き受ける`, primary: true, onClick: () => acceptQuest(q) },
+        ],
+    });
+}
+function acceptQuest(q) {
+    q.days.forEach(i => { game.board.days[i] = { type: 'quest', orig: game.board.days[i] }; });
+    game.quest = q;
+    game.questCount++;
+    game.pending = null;
+    game.message = `${q.boss} の討伐を引き受けた。期限は ${dateLabel(q.deadline)}。`;
+    saveGame(); render();
+}
+// 依頼を終える（盤の討伐のマスを元に戻す）
+function endQuest() {
+    if (!game.quest) return;
+    game.board.days.forEach((sq, i) => { if (sq.type === 'quest') game.board.days[i] = sq.orig || { type: 'rest' }; });
+    game.quest = null;
+}
+function finishQuest(p, win, team) {
+    const q = game.quest;
+    const L = QUEST_LEVELS[q.level];
+    const h = p.helper ? game.alumni.find(a => a.id === p.helper) : null;
+    endQuest();
+    if (win) {
+        const ren = Math.round(L.renown * (h ? HELPER_RENOWN_MUL : 1));
+        team.forEach(s => { s.renown = (s.renown || 0) + ren; });
+        game.gold += L.gold; game.fame += L.fame;
+        if (h) { h.helped = (h.helped || 0) + 1; growAlumnus(h, HELPER_QUEST_GROWTH); }
+        game.records.push({ year: game.year, name: `討伐: ${q.boss}`, result: '成功' });
+        game.pending = {
+            kind: 'notice', title: '魔物討伐 成功',
+            html: `<p class="big">${esc(q.boss)} を退治した</p><p>出た生徒: ${team.map(s => esc(s.name)).join('、')}${h ? `　助っ人: ${esc(h.name)}（${jobTitle(h)}）` : ''}</p>
+                <p>${L.gold} ゴールド・知名度 +${L.fame}・生徒の名声 +${ren}${h ? `（助っ人を呼んだので ${Math.round(HELPER_RENOWN_MUL * 100)}%）` : ''}</p>${h ? `<p class="muted">${esc(h.name)} も腕を上げた。</p>` : ''}`,
+        };
+        game.message = `${q.boss} の討伐に成功した。`;
+    } else {
+        game.fame = Math.max(0, game.fame - QUEST_FAIL_FAME);
+        game.records.push({ year: game.year, name: `討伐: ${q.boss}`, result: '失敗' });
+        game.pending = { kind: 'notice', title: '魔物討伐 失敗', html: `<p>${esc(q.boss)} に敗れ、依頼は果たせなかった。知名度 -${QUEST_FAIL_FAME}</p>` };
+        game.message = `${q.boss} の討伐に失敗した。`;
+    }
+    saveGame(); render();
+}
+function isRetired(a) { return game.year - a.year >= HELPER_RETIRE; }
+// 今回予定の空いている助っ人（強い人・勇者ほど空きにくい）。依頼ごとに一度だけ決める
+function availableHelpers() {
+    const q = game.quest;
+    if (!q.helpers) {
+        q.helpers = game.alumni.filter(a => a.tier && !isRetired(a) && Math.random() < clamp(0.75 - (power(a) - 150) / 300, 0.15, 0.75) * (a.tier === 'hero' ? 0.6 : 1)).map(a => a.id);
+        saveGame();
+    }
+    return q.helpers.map(id => game.alumni.find(a => a.id === id)).filter(Boolean);
+}
+// 卒業生が育つ（rate はその能力の成長率に対する割合）
+function growAlumnus(a, rate) {
+    STATS.forEach(st => { a.stats[st.key] += st.growth * rate * (0.5 + Math.random()); fixOverflow(a, st.key); });
+}
+function growHelpers() { game.alumni.forEach(a => { if (a.tier && !isRetired(a)) growAlumnus(a, HELPER_YEAR_GROWTH); }); }
+function renderQuestBar() {
+    const q = game.quest;
+    if (!q) { ui.questbar.hidden = true; return; }
+    ui.questbar.hidden = false;
+    const left = q.days.filter(d => d > game.day);
+    ui.questbar.innerHTML = `${icon('skull')}<span>討伐の依頼: <b>${esc(q.boss)}</b>（${QUEST_LEVELS[q.level].name}）期限まで ${q.deadline - game.day} 日。</span><span class="muted">${left.length ? `討伐のマス: ${left.map(d => `${dateOf(d).getMonth() + 1}/${dateOf(d).getDate()}`).join('・')}` : 'もう討伐のマスが残っていない'}</span>`;
 }
 // 戦った生徒は少し伸びる
 function battleGrowth(s, win) {
@@ -784,6 +908,7 @@ function afterMatch(r) {
     const team = r.units.map(u => game.students.find(s => s.id === u.studentId)).filter(Boolean);
     team.forEach(s => { battleGrowth(s, r.win); s.fatigue += p.mode === 'small' ? 8 : 10; s.mood += r.win ? 5 : -5; normalizeStudent(s); });
     refillHand();
+    if (p.mode === 'quest') { finishQuest(p, r.win, team); return; }
     if (p.mode === 'small') {
         if (r.win) {
             const gold = rand(20, 50) + Math.floor(game.day / 10);
@@ -870,7 +995,7 @@ function graduate(s, job) {
     const a = {
         id: s.id, name: s.name, year: game.year, job: job.key, hope: s.hope, wins: s.wins, titles: s.titles || 0,
         renown: Math.round((s.renown || 0) * 10) / 10, tier, potential: s.potential || 'normal',
-        power: Math.round(power(s)), rank: powerRank(s), stats: { ...s.stats }, skills: s.skills.slice(),
+        power: Math.round(power(s)), rank: powerRank(s), stats: { ...s.stats }, gradStats: { ...s.stats }, skills: s.skills.slice(), helped: 0,
     };
     game.alumni.push(a);
     if (tier === 'hero' && !game.firstHero) { game.firstHero = { year: game.year, name: s.name, id: s.id }; p.firstHero = true; }
@@ -922,6 +1047,9 @@ function startNewYear() {
     game.board = generateBoard();
     game.day = 0;
     game.pending = null;
+    game.quest = null;
+    game.questCount = 0;
+    growHelpers();
     selected = null;
     refillHand();
     game.message = `${game.year}年目が始まった。今日は入学式です。`;
@@ -940,13 +1068,13 @@ function openAlumni(tab = 'roster') {
     const roster = listed.length ? `<div class="roster">${listed.map(a => `<div class="ros ${a.tier === 'hero' ? 'hero' : ''}">
             <span class="ros-mark">${icon(a.tier === 'hero' ? 'crown' : 'star')}</span>
             <span class="ros-main"><b>${esc(a.name)}</b> <span class="ros-title">${jobTitle(a)}</span>${a.tier === 'hero' ? `<small>（${JOB_BY_KEY[a.job].name}）</small>` : ''}<br>
-            <small>${a.year}年目に卒業・名声 ${fmtRenown(a.renown)}・総合力 ${a.power}（${RANK_NAMES[a.rank || 0]}）・優勝 ${a.titles || 0} 回</small></span></div>`).join('')}</div>`
+            <small>${a.year}年目に卒業・名声 ${fmtRenown(a.renown)}・卒業時の総合力 ${a.power}（${RANK_NAMES[a.rank || 0]}）・今の総合力 ${Math.round(power(a))}・優勝 ${a.titles || 0} 回・助っ人 ${a.helped || 0} 回${isRetired(a) ? '・引退' : ''}</small></span></div>`).join('')}</div>`
         : `<p class="muted">まだ誰も載っていない。在学中に名声 ${ROSTER_RENOWN} 以上を集めて卒業すると載る。</p>`;
     const seg = (k, l) => `<button class="seg ${tab === k ? 'on' : ''}" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`;
     showDialog({
         title: '学園の歴史', wide: true,
         body: `<div class="segs">${seg('roster', '英傑録')}${seg('years', '年ごとの記録')}</div><div class="hist-body">${tab === 'roster'
-            ? `<p class="muted">名声の高い卒業生が載り、職業は上位の名で呼ばれる（${JOBS.map(j => `${j.name} → ${ELITE_NAMES[j.key]}`).join('、')}、村人 → ${ELITE_NAMES.villager}）。名声 ${HERO_RENOWN} 以上・総合力 ${HERO_POWER} 以上で卒業すると勇者になる。</p>${roster}`
+            ? `<p class="muted">名声の高い卒業生が載り、職業は上位の名で呼ばれる（${JOBS.map(j => `${j.name} → ${ELITE_NAMES[j.key]}`).join('、')}、村人 → ${ELITE_NAMES.villager}）。名声 ＋ 総合力が ${HERO_SUM} 以上で卒業すると勇者になる。英傑録の卒業生は、魔物討伐の助っ人に呼べる（卒業から ${HELPER_RETIRE} 年で引退）。</p>${roster}`
             : yearly}</div>`,
         onOpen: () => ui.dlgBody.querySelectorAll('.seg[data-tab]').forEach(el => el.addEventListener('click', () => openAlumni(el.dataset.tab))),
     });
@@ -1043,6 +1171,7 @@ function loadGame() {
         if ((p.saveVersion || 1) < 4) migrateTo4();
         if ((p.saveVersion || 1) < 6) migrateTo5();
         if ((p.saveVersion || 1) < 7) migrateTo7();
+        if ((p.saveVersion || 1) < 8) migrateTo8();
         game.saveVersion = SAVE_VERSION;
         return true;
     } catch (err) {
@@ -1097,6 +1226,13 @@ function migrateTo7() {
     game.alumni.forEach(a => { if (typeof a.renown !== 'number') a.renown = a.wins || 0; if (a.tier === undefined) a.tier = renownTier(a.renown, a.power); });
     if (game.firstHero === undefined) { const h = game.alumni.find(a => a.tier === 'hero'); game.firstHero = h ? { year: h.year, name: h.name, id: h.id } : null; }
 }
+// v0.8 までのセーブ: 名声を 5 倍の整数にし、卒業時のデータを残す
+function migrateTo8() {
+    game.students.forEach(s => { s.renown = Math.round((s.renown || 0) * 5); });
+    game.alumni.forEach(a => { a.renown = Math.round((a.renown || 0) * 5); if (!a.gradStats) a.gradStats = { ...a.stats }; if (a.helped === undefined) a.helped = 0; });
+    if (game.quest === undefined) game.quest = null;
+    if (game.questCount === undefined) game.questCount = 0;
+}
 function fullReset() {
     if (!confirm('今までのデータを消して、最初からやり直しますか？（元に戻せません）')) return;
     resetting = true;
@@ -1106,7 +1242,7 @@ function fullReset() {
 
 // ---------- 起動 ----------
 function init() {
-    ['date', 'fame', 'gold', 'next', 'strip', 'branch', 'students', 'hand', 'specials', 'handbar', 'go', 'goInfo', 'handLabel', 'message', 'dlg', 'dlgTitle', 'dlgBody', 'dlgButtons', 'toast', 'version']
+    ['date', 'fame', 'gold', 'next', 'strip', 'branch', 'questbar', 'students', 'hand', 'specials', 'handbar', 'go', 'goInfo', 'handLabel', 'message', 'dlg', 'dlgTitle', 'dlgBody', 'dlgButtons', 'toast', 'version']
         .forEach(id => { ui[id] = $(id); });
     document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
     ui.version.textContent = `v${APP_VERSION}`;

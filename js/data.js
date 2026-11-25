@@ -72,16 +72,40 @@ const COACH_FAME_MAX = 0.4;
 const COACH_PER = 3;
 const COACH_MIN = 1;
 
-// 名声: 生徒ごとの在学中の実績
+// 名声: 生徒ごとの在学中の実績（整数）
 // 大会の試合に勝つと win、優勝すると title をさらに足す。団体戦は team 倍。小さな戦いに勝つと small
-const RENOWN = { win: 1, title: 3, team: 2, small: 0.2 };
-// 英傑録に載る名声と、勇者になる名声・総合力
-const ROSTER_RENOWN = 14;
-const HERO_RENOWN = 28;
-const HERO_POWER = 210;
+const RENOWN = { win: 5, title: 15, team: 2, small: 1 };
+// 英傑録に載る名声と、勇者になる「名声 ＋ 総合力」
+const ROSTER_RENOWN = 120;
+const HERO_SUM = 400;
 // 英傑録に載った人の職業の名前
 const ELITE_NAMES = { warrior: '剣聖', knight: '聖騎士', mage: '大魔法士', priest: '大司教', hunter: '天弓', thief: '密偵', villager: '村の英雄' };
 const HERO_NAME = '勇者';
+// 魔物討伐の依頼
+// 難しさ: lv は相手の強さの倍率、renown は参加した生徒の名声（助っ人を呼ぶと HELPER_RENOWN_MUL 倍）
+const QUEST_LEVELS = [
+    { name: '見習い向け', lv: 1.25, gold: 150, fame: 8, renown: 10 },
+    { name: '一人前向け', lv: 1.5, gold: 300, fame: 15, renown: 15 },
+    { name: '熟練者向け', lv: 1.8, gold: 500, fame: 25, renown: 25 },
+];
+const QUEST_BOSSES = [
+    { name: '畑荒らしの大猪', w: { hp: 1.6, atk: 1.3, def: 1.1, aspd: 0.7 }, skills: ['dash', 'stun'] },
+    { name: '洞窟のオーガ', w: { hp: 1.7, atk: 1.4, def: 1.0, mspd: 0.6 }, skills: ['bash', 'endure'] },
+    { name: '沼地の大蛇', w: { hp: 1.3, atk: 1.1, aspd: 1.3, mspd: 1.2 }, skills: ['twin', 'quick'] },
+    { name: '廃城の亡霊騎士', w: { hp: 1.2, def: 1.5, mdef: 1.2, atk: 1.1 }, skills: ['crush', 'wall'] },
+    { name: '谷の若竜', w: { hp: 1.5, mag: 1.4, mdef: 1.2, atk: 1.1 }, skills: ['fire', 'storm'] },
+];
+const QUEST_DAYS = 20;            // 依頼が届いてから期限までの日数
+const QUEST_CHANCE = 0.12;        // 出来事のマスで依頼が届く確率（知名度 1 あたり QUEST_CHANCE_FAME 足す）
+const QUEST_CHANCE_FAME = 0.0003;
+const QUEST_MAX_PER_YEAR = 3;
+const QUEST_FAIL_FAME = 3;        // 期限を逃したり負けたりしたときに下がる知名度
+// 助っ人（英傑録の卒業生）
+const HELPER_RENOWN_MUL = 0.6;    // 助っ人を呼ぶと、生徒の名声はこの倍率
+const HELPER_YEAR_GROWTH = 0.12;  // 卒業後 1 年ごとの伸び（能力ごとの成長率に対する割合）
+const HELPER_QUEST_GROWTH = 0.08; // 助っ人で討伐に成功したときの伸び
+const HELPER_RETIRE = 60;         // 卒業からこの年数で引退して呼べなくなる
+
 // 団体戦の相手の強さの倍率（4 人そろった学園でないと勝てない強さ）
 const TEAM_RIVAL_SCALE = 0.8;
 
@@ -102,6 +126,7 @@ const PRACTICE_BY_KEY = Object.fromEntries(PRACTICES.map(p => [p.key, p]));
 
 // マスの種類
 const SQUARES = {
+    quest: { name: '討伐', color: 'var(--sq-quest)', icon: 'skull' },
     practice: { name: '練習', color: 'var(--sq-practice)', icon: 'sword' },
     rest: { name: '休み', color: 'var(--sq-rest)', icon: 'moon' },
     event: { name: '出来事', color: 'var(--sq-event)', icon: 'alert' },
