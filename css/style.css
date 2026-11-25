@@ -162,14 +162,14 @@ dialog p { margin: 6px 0; line-height: 1.6; }
 .rank.r0 { color: var(--muted); } .rank.r1 { color: #8a8f98; } .rank.r2 { color: #4f9a5b; }
 .rank.r3 { color: #3f7fd0; } .rank.r4 { color: #c0602e; } .rank.r5 { color: #fff; background: #c9952b; }
 .srow small { color: var(--accent); }
-.apts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 6px 0; }
-.apt { display: grid; grid-template-columns: 7.5em 1fr 3em; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
-.apt.can { color: inherit; font-weight: bold; }
-.apt b { text-align: right; font-variant-numeric: tabular-nums; }
-.apt .bar { position: relative; height: 8px; overflow: visible; }
-.apt .bar i { opacity: .45; }
-.apt.can .bar i { opacity: 1; }
-.apt .apt-line { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--accent); }
+.reqs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 18px; margin: 6px 0; }
+.req { display: grid; gap: 2px; font-size: 13px; color: var(--muted); padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; }
+.req.can { color: inherit; border-color: var(--accent); }
+.req-job { font-weight: bold; }
+.req-items { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; }
+.req-item b { font-variant-numeric: tabular-nums; }
+.req-item.ok { color: var(--mood); }
+.req-can { color: #fff; background: var(--accent); border-radius: 4px; padding: 0 4px; font-weight: normal; }
 .hope-tag { color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 3px; font-weight: normal; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
@@ -275,7 +275,7 @@ body.in-battle { overflow: hidden; }
     .specials { margin-left: 0; padding-left: 6px; }
     .sq { width: 58px; height: 68px; }
     .sq.today { width: 70px; height: 78px; }
-    .stats, .apts { grid-template-columns: 1fr; }
+    .stats, .reqs { grid-template-columns: 1fr; }
     .btn-text { display: none; }
 }
 @media (max-width: 380px) {

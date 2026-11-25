@@ -142,24 +142,22 @@ function normalizeStudent(s) {
     s.fatigue = clamp(Math.round(s.fatigue), 0, 100);
     s.mood = clamp(Math.round(s.mood), 0, 100);
 }
-// 職業の適性（100 がふつう。APT_LINE 以上なら卒業のときに選べる）
-function aptitude(s, job) {
-    const v = k => statScore(k, s.stats[k]);
-    const fav = job.favor.reduce((a, k) => a + v(k), 0) / job.favor.length;
-    const all = STATS.reduce((a, st) => a + v(st.key), 0) / STATS.length;
-    return all > 0 ? Math.round(fav / all * 100) : 100;
-}
-// 卒業のときに選べる職業（どれも基準に届かなければ、いちばん高い 1 つ）
+// 職業の要件: 見る能力がどれも req 以上
+function meetsJob(s, job) { return job.favor.every(k => s.stats[k] >= STAT_BY_KEY[k].req); }
+// 卒業のときに選べる職業（どれも満たさなければ村人）
 function eligibleJobs(s) {
-    const ok = JOBS.filter(j => aptitude(s, j) >= APT_LINE);
-    if (ok.length) return ok;
-    return [JOBS.slice().sort((a, b) => aptitude(s, b) - aptitude(s, a))[0]];
+    const ok = JOBS.filter(j => meetsJob(s, j));
+    return ok.length ? ok : [VILLAGER];
 }
-function aptRows(s) {
-    const pos = a => clamp((a - 60) / 90 * 100, 2, 100);
-    return `<div class="apts">${JOBS.map(j => {
-        const a = aptitude(s, j);
-        return `<div class="apt ${a >= APT_LINE ? 'can' : ''}"><span>${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}</span><span class="bar"><i style="width:${pos(a)}%"></i><b class="apt-line" style="left:${pos(APT_LINE)}%"></b></span><b>${a}</b></div>`;
+function reqRows(s) {
+    return `<div class="reqs">${JOBS.map(j => {
+        const can = meetsJob(s, j);
+        const items = j.favor.map(k => {
+            const st = STAT_BY_KEY[k], v = s.stats[k];
+            const fmt = x => st.pct ? `${Math.round(x)}%` : `${Math.round(x)}${st.unit || ''}`;
+            return `<span class="req-item ${v >= st.req ? 'ok' : ''}">${st.name} <b>${fmt(Math.min(v, 999))}</b> / ${fmt(st.req)}</span>`;
+        }).join('');
+        return `<div class="req ${can ? 'can' : ''}"><span class="req-job">${j.name}${j.key === s.hope ? ' <small class="hope-tag">希望</small>' : ''}${can ? ' <small class="req-can">なれる</small>' : ''}</span><span class="req-items">${items}</span></div>`;
     }).join('')}</div>`;
 }
 // 能力ごとの大きさの違いをならした値（総合と適性に使う）
@@ -385,7 +383,8 @@ function practiceGain(s, sub, coached, mul) {
     const fatigueMul = s.fatigue > 80 ? 0.6 : 1;
     Object.entries(p.gains).forEach(([k, base]) => {
         const talentMul = s.talent.includes(k) ? 1.5 : 1;
-        const v = base * talentMul * moodMul * fatigueMul * (coached ? 1 : 0.25) * mul * (0.8 + Math.random() * 0.4);
+        const hopeMul = JOB_BY_KEY[s.hope].favor.includes(k) ? HOPE_GROWTH : 1;
+        const v = base * talentMul * hopeMul * moodMul * fatigueMul * (coached ? 1 : 0.25) * mul * (0.8 + Math.random() * 0.4);
         addStat(s, k, v);
     });
     return statDiff(before, s);
@@ -742,7 +741,7 @@ function runMatch() {
 // 戦った生徒は少し伸びる
 function battleGrowth(s, win) {
     const keys = shuffle(['hp', 'atk', 'mag', 'def', 'mdef', 'aspd', 'mspd']).slice(0, 2);
-    keys.forEach(k => addStat(s, k, rand(1, 3) + (win ? 1 : 0)));
+    keys.forEach(k => addStat(s, k, (rand(1, 3) + (win ? 1 : 0)) * (JOB_BY_KEY[s.hope].favor.includes(k) ? HOPE_GROWTH : 1)));
     if (Math.random() < 0.3) addStat(s, pick(['crit', 'ppen', 'mpen', 'ten']), 0.5);
     if (Math.random() < 0.3) addStat(s, pick(['critdmg', 'plet', 'mlet']), 1);
     return keys;
@@ -815,13 +814,13 @@ function openGraduation() {
     if (!p.queue.length) { finishGraduation(); return; }
     const s = game.students.find(x => x.id === p.queue[0]);
     const ok = eligibleJobs(s);
-    const note = aptitude(s, ok[0]) < APT_LINE ? `どの職業も基準（${APT_LINE}）に届かなかったので、いちばん向いている職業になる。`
-        : ok.length === 1 ? `基準（${APT_LINE}）を超えた職業は 1 つだけ。` : `基準（${APT_LINE}）を超えた職業から、進む道を選んでください。`;
+    const note = ok[0] === VILLAGER ? 'どの職業の要件にも届かなかったので、村人として故郷に帰る。'
+        : ok.length === 1 ? '要件を満たした職業は 1 つだけ。' : '要件を満たした職業から、進む道を選んでください。';
     showDialog({
         title: `卒業式: ${s.name}`, wide: true,
         body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　総合 ${Math.round(power(s))}　大会の勝ち ${s.wins}　技 ${s.skills.length}</p>
-            <p class="muted">職業の適性（その職業で見る能力が、${esc(s.name)} の能力の平均の何 % か）。縦の線が基準。</p>
-            ${aptRows(s)}<p>${note}</p>`,
+            <p class="muted">職業の要件（その職業で見る能力が、どれも決まった値以上ならなれる）。</p>
+            ${reqRows(s)}<p>${note}</p>`,
         buttons: ok.map(j => ({ label: `${icon('cap')}${j.name}${j.key === s.hope ? '（希望）' : ''}として卒業`, primary: j.key === s.hope || ok.length === 1, onClick: () => graduate(s, j) })),
     });
 }
@@ -897,8 +896,8 @@ function openStudent(id) {
     showDialog({
         title: `${s.name}（${s.grade}年）`, wide: true,
         body: `<p>希望の職業: <b>${JOB_BY_KEY[s.hope].name}</b>　疲れ ${s.fatigue}　やる気 ${s.mood}　大会の勝ち ${s.wins}</p><div class="stats">${rows}</div>
-            <h3>職業の適性</h3>${aptRows(s)}
-            <p class="muted">卒業式（3 月 20 日）で、適性が ${APT_LINE} 以上の職業から選べる（希望の職業とは限らない）。${s.grade < 3 ? `卒業まであと ${3 - s.grade} 年。` : '今年卒業する。'}</p>
+            <h3>職業の要件</h3>${reqRows(s)}
+            <p class="muted">卒業式（3 月 20 日）で、要件を満たした職業から選べる。どれも満たさなければ村人になる。希望の職業で見る能力は少し伸びやすい。${s.grade < 3 ? `卒業まであと ${3 - s.grade} 年。` : '今年卒業する。'}</p>
             <h3>覚えた技</h3>${s.skills.length ? `<ul class="plain">${s.skills.map(id => `<li><b>${SKILLS[id].name}</b>　<small>${esc(SKILLS[id].desc)}（マナ ${SKILLS[id].mp}）</small></li>`).join('')}</ul>` : '<p class="muted">まだない。練習のマスで「技を練習する」を選ぶと覚えられる。</p>'}
             ${Object.entries(s.skillProg).filter(([l, v]) => v > 0 && nextSkill(s, l)).map(([l, v]) => `<p class="muted">練習中: ${SKILLS[nextSkill(s, l)].name} ${Math.round(v)}%</p>`).join('')}`,
     });
