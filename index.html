@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#3b2f4a">
+<title>ダイスアカデミー</title>
+<meta name="description" content="勇者養成学校の教官になって、サイコロ札で暦を進めながら見習い勇者を育てる双六育成シミュレーション。">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ダイスアカデミー">
+<meta property="og:title" content="ダイスアカデミー">
+<meta property="og:description" content="勇者養成学校の教官になって、サイコロ札で暦を進めながら見習い勇者を育てる双六育成シミュレーション。">
+<meta property="og:url" content="https://arata-a3.github.io/DiceAcademy/">
+<meta property="og:locale" content="ja_JP">
+<meta name="twitter:card" content="summary">
+<script>try { const a = JSON.parse(localStorage.getItem('diceacademy_save') || '{}').appearance; if (a === 'light' || a === 'dark') document.documentElement.dataset.theme = a; } catch (e) { }</script>
+<link rel="stylesheet" href="css/style.css?v=0.1">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <h1>ダイスアカデミー</h1>
+    <span id="date" class="date"></span>
+    <span class="stat-chip" title="知名度"><span data-icon="star"></span><span id="fame"></span></span>
+    <span class="stat-chip" title="所持金（ゴールド）"><span data-icon="coin"></span><span id="gold"></span></span>
+    <span id="next" class="next"></span>
+    <span class="top-btns">
+      <button id="cal-btn" class="icon-btn" aria-label="月のカレンダー"><span data-icon="calendar"></span><span class="btn-text">カレンダー</span></button>
+      <button id="set-btn" class="icon-btn" aria-label="設定"><span data-icon="gear"></span></button>
+    </span>
+  </header>
+
+  <section class="board">
+    <div id="strip" class="strip"></div>
+    <div id="branch" class="branch" hidden></div>
+  </section>
+
+  <p id="message" class="message" aria-live="polite"></p>
+
+  <section id="students" class="students"></section>
+
+  <footer id="handbar" class="handbar">
+    <div class="hand-row">
+      <span id="handLabel" class="hand-label"></span>
+      <div id="hand" class="hand"></div>
+      <div id="specials" class="hand specials"></div>
+    </div>
+    <div class="go-row">
+      <span id="goInfo" class="go-info"></span>
+      <button id="go" class="btn primary go" disabled></button>
+    </div>
+    <button id="version" class="version" aria-label="変更の記録"></button>
+  </footer>
+</div>
+
+<dialog id="dlg">
+  <h2 id="dlgTitle"></h2>
+  <div id="dlgBody"></div>
+  <div id="dlgButtons" class="dlg-buttons"></div>
+</dialog>
+<div id="toast" class="toast" role="status"></div>
+
+<script src="js/version.js?v=0.1"></script>
+<script src="js/data.js?v=0.1"></script>
+<script src="js/app.js?v=0.1"></script>
+</body>
+</html>
