@@ -74,7 +74,12 @@ const COACH_MIN = 1;
 
 // 名声: 生徒ごとの在学中の実績（整数）
 // 大会の試合に勝つと win、優勝すると title をさらに足す。団体戦は team 倍。小さな戦いに勝つと small
-const RENOWN = { win: 5, title: 15, team: 2, small: 1 };
+const RENOWN = { win: 4, title: 12, team: 2, royal: 3, small: 1, exam: 15 };
+// 大会の相手の強さは FIXED_EVENTS の rival（倍率）。王国武闘会は知名度とお金が ROYAL_FAME_MUL 倍
+const ROYAL_FAME_MUL = 2;
+// 卒業試験の教官の強さの倍率
+const EXAM_STRENGTH = 0.95;
+const EXAM_TEACHERS = ['ガラハド教官', 'ローザ教官', 'ベルント教官', 'シオン教官', 'マルタ教官', 'ユーグ教官'];
 // 英傑録に載る「名声 ＋ 総合力」と、勇者になる「名声 ＋ 総合力」
 const ROSTER_SUM = 300;
 const HERO_SUM = 400;
@@ -84,9 +89,9 @@ const HERO_NAME = '勇者';
 // 魔物討伐の依頼
 // 難しさ: lv は相手の強さの倍率、renown は参加した生徒の名声（助っ人を呼ぶと HELPER_RENOWN_MUL 倍）
 const QUEST_LEVELS = [
-    { name: '見習い向け', lv: 1.25, gold: 150, fame: 8, renown: 10 },
-    { name: '一人前向け', lv: 1.5, gold: 300, fame: 15, renown: 15 },
-    { name: '熟練者向け', lv: 1.8, gold: 500, fame: 25, renown: 25 },
+    { name: '見習い向け', lv: 1.25, gold: 150, fame: 8, renown: 6 },
+    { name: '一人前向け', lv: 1.5, gold: 300, fame: 15, renown: 9 },
+    { name: '熟練者向け', lv: 1.8, gold: 500, fame: 25, renown: 14 },
 ];
 const QUEST_BOSSES = [
     { name: '畑荒らしの大猪', w: { hp: 1.6, atk: 1.3, def: 1.1, aspd: 0.7 }, skills: ['dash', 'stun'] },
@@ -106,8 +111,26 @@ const HELPER_YEAR_GROWTH = 0.12;  // 卒業後 1 年ごとの伸び（能力ご�
 const HELPER_QUEST_GROWTH = 0.08; // 助っ人で討伐に成功したときの伸び
 const HELPER_RETIRE = 60;         // 卒業からこの年数で引退して呼べなくなる
 
-// 団体戦の相手の強さの倍率（4 人そろった学園でないと勝てない強さ）
-const TEAM_RIVAL_SCALE = 0.8;
+// 学園の設備（修了式のあとに建てる。3 段階まで）
+const FACILITIES = [
+    { key: 'training', name: '訓練場', desc: '指導した練習の伸び +10%', per: 0.1 },
+    { key: 'library', name: '図書室', desc: '技の練習の進み +20%', per: 0.2 },
+    { key: 'infirmary', name: '医務室', desc: 'けがの日数 -20%・休みで疲れが取れる量 +20%', per: 0.2 },
+    { key: 'dorm', name: '寮', desc: '入学する人数 +1', per: 1 },
+];
+const FACILITY_COST = [200, 450, 900];   // 1・2・3 段階目を建てるお金
+const FACILITY_MAX = 3;
+// 有名な卒業生に憧れて入学する生徒
+const ADMIRE_CHANCE = { hero: 0.3, elite: 0.1, max: 0.7 };   // 1 人あたりの確率（合計の上限 max）。1 年に 1 人まで
+// 卒業生が英傑録に載る・勇者になったときに上がる知名度
+const ELITE_FAME = 10;
+const HERO_FAME = 30;
+
+// 英傑録の書き出しの形式
+const ROSTER_FORMAT = 'diceacademy-roster';
+const ROSTER_FORMAT_VERSION = 1;
+const SCHOOL_NAME = 'ダイスアカデミー';
+
 
 // 練習の種類。gains: 能力ごとの基本の伸び
 const PRACTICES = [
@@ -149,9 +172,13 @@ const ROUTES = {
 // 決まった日の行事（月, 日）
 const FIXED_EVENTS = [
     { month: 4, day: 1, key: 'entrance', name: '入学式' },
-    { month: 5, day: 20, key: 'rookie', name: '新人戦', tournament: true, desc: '1 年生だけの個人戦' },
-    { month: 7, day: 20, key: 'sword', name: '剣技大会', tournament: true, desc: '物理が有利な個人戦' },
-    { month: 12, day: 10, key: 'team', name: '学園対抗戦', tournament: true, desc: '4 人の団体戦' },
+    { month: 5, day: 20, key: 'rookie', name: '新人戦', tournament: true, rookie: true, desc: '1 年生だけの個人戦' },
+    { month: 6, day: 20, key: 'team1', name: '学園対抗戦・夏', tournament: true, team: true, rival: 1.15, desc: '4 人の団体戦' },
+    { month: 7, day: 20, key: 'sword', name: '剣技大会', tournament: true, mods: { phys: 1.3, mag: 0.7 }, jobs: ['warrior', 'knight', 'thief', 'hunter'], desc: '物理が有利な個人戦' },
+    { month: 10, day: 20, key: 'magic', name: '魔導大会', tournament: true, mods: { phys: 0.7, mag: 1.3 }, jobs: ['mage', 'priest'], desc: '魔法が有利な個人戦' },
+    { month: 12, day: 10, key: 'team', name: '学園対抗戦・冬', tournament: true, team: true, rival: 0.8, desc: '4 人の団体戦' },
+    { month: 1, day: 25, key: 'royal', name: '王国武闘会', tournament: true, team: true, royal: true, rival: 0.95, desc: 'その年の学園対抗戦で準優勝以上の学園だけが出られる団体戦' },
+    { month: 2, day: 20, key: 'exam', name: '卒業試験', exam: true, desc: '3 年生全員で教官隊と戦う' },
     { month: 3, day: 20, key: 'graduation', name: '卒業式', desc: '3 年生が卒業し、職業が決まる' },
     { month: 3, day: 31, key: 'yearend', name: '修了式', desc: '1 年が終わり、みんな 1 つ上の学年になる' },
 ];

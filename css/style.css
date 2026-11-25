@@ -199,6 +199,14 @@ dialog p { margin: 6px 0; line-height: 1.6; }
 .ros.hero .ros-mark, .ros.hero .ros-title { color: #c9952b; }
 #dlg.hero { border: 2px solid #c9952b; }
 .hero-big { font-size: 20px; font-weight: bold; color: #c9952b; text-align: center; margin: 6px 0 10px; }
+.facs { display: grid; gap: 8px; }
+.fac { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.fac-lv { color: var(--accent); letter-spacing: 2px; }
+.fac-build { white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; }
+.admire { color: var(--accent); }
+.file-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.file-btns .btn { display: inline-flex; gap: 4px; align-items: center; }
+.imported { color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tbl th, .tbl td { border-bottom: 1px solid var(--line); padding: 4px 6px; text-align: left; }
 .segs { display: flex; gap: 6px; flex-wrap: wrap; }
