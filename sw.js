@@ -1,6 +1,6 @@
 // ダイスアカデミー サービスワーカー
 // ページ類はネットワーク優先（ブラウザの保存分を使わずに取る）。つながらないときだけ保存分を使う
-const CACHE = 'diceacademy-v2';
+const CACHE = 'diceacademy-v3';
 const CORE = ['./', 'index.html', 'css/style.css', 'js/version.js', 'js/data.js', 'js/avatar.js', 'js/battle.js', 'js/app.js', 'icon.svg', 'icon-192.png', 'manifest.webmanifest'];
 
 self.addEventListener('install', e => {

@@ -51,6 +51,25 @@ const MONSTERS = [
     { name: '大イノシシ', from: 200, w: { hp: 1.5, atk: 1.2, def: 1.0, aspd: 0.7 }, skills: ['dash', 'stun'] },
     { name: '森の魔女', from: 250, w: { mag: 1.4, mp: 1.3, mdef: 1.2, hp: 0.8 }, skills: ['fire', 'storm'] },
 ];
+// 魔物のアイコン（24×24 の線画）
+const MONSTER_ICONS = {
+    'スライム': '<path d="M4 19c0-7 4-12 8-12s8 5 8 12z"/><circle cx="9.5" cy="14" r="1"/><circle cx="14.5" cy="14" r="1"/><path d="M10 17q2 1 4 0"/>',
+    'ゴブリン': '<path d="M7 10q5-6 10 0v5q-5 5-10 0z"/><path d="M7 11L2 8l4 6M17 11l5-3-4 6"/><circle cx="10" cy="12" r="1"/><circle cx="14" cy="12" r="1"/><path d="M10 16l1-1 1 1 1-1 1 1"/>',
+    '大コウモリ': '<path d="M12 9c-1-3-5-4-10-2 2 1 2 3 1 5 2-1 4 0 5 2 1-1 3-2 4-2s3 1 4 2c1-2 3-3 5-2-1-2-1-4 1-5-5-2-9-1-10 2z"/><circle cx="10.5" cy="11" r=".8"/><circle cx="13.5" cy="11" r=".8"/>',
+    '森オオカミ': '<path d="M5 4l3 5h8l3-5 1 8-3 5-5 3-5-3-3-5z"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><path d="M11 16h2l-1 1.5z"/>',
+    'ガイコツ兵': '<path d="M12 3a7 7 0 0 0-7 7c0 2.5 1.2 4.4 3 5.4V19h8v-3.6c1.8-1 3-2.9 3-5.4a7 7 0 0 0-7-7z"/><circle cx="9" cy="10" r="1.6"/><circle cx="15" cy="10" r="1.6"/><path d="M10 19v-2M14 19v-2M12 13v1.5"/>',
+    '小悪魔': '<path d="M6 7l2 3M18 7l-2 3"/><path d="M7 11a5 5 0 0 1 10 0v3a5 5 0 0 1-10 0z"/><circle cx="10" cy="12" r="1"/><circle cx="14" cy="12" r="1"/><path d="M10 16q2 1.5 4 0"/><path d="M17 17q4 1 3 4l-1-1"/>',
+    '大イノシシ': '<path d="M3 14c0-5 4-8 9-8s9 3 9 8-4 5-9 5-9 0-9-5z"/><path d="M17 15l3 2M7 15l-3 2"/><circle cx="9" cy="11" r="1"/><circle cx="15" cy="11" r="1"/><ellipse cx="12" cy="15" rx="2.4" ry="1.6"/>',
+    '森の魔女': '<path d="M3 16h18"/><path d="M7 16l4-12 3 6 3-1-2 7"/><path d="M8 19q4 2 8 0"/><circle cx="12" cy="14" r=".6"/>',
+    '畑荒らしの大猪': '<path d="M3 14c0-5 4-8 9-8s9 3 9 8-4 5-9 5-9 0-9-5z"/><path d="M16 15l4 3M8 15l-4 3"/><path d="M8 9L6 5M16 9l2-4"/><circle cx="9" cy="11" r="1"/><circle cx="15" cy="11" r="1"/><ellipse cx="12" cy="15" rx="2.4" ry="1.6"/>',
+    '洞窟のオーガ': '<path d="M6 9a6 6 0 0 1 12 0v5a6 6 0 0 1-12 0z"/><path d="M9 4l1 3M15 4l-1 3"/><path d="M8 11l2 1M16 11l-2 1"/><path d="M9 16h6M10 16v1.5M14 16v1.5"/>',
+    '沼地の大蛇': '<path d="M5 20c4 0 5-3 3-5s-2-5 2-6 6 1 6-3"/><path d="M14 6c1-2 4-2 5 0s-1 3-3 3"/><circle cx="17" cy="5.5" r=".6"/><path d="M20 7l2 .5M20 7l1.5 1.5"/>',
+    '廃城の亡霊騎士': '<path d="M6 10a6 6 0 0 1 12 0v6H6z"/><path d="M6 12h12"/><path d="M9 14.5h2M13 14.5h2"/><path d="M12 4v-2M8 20q4 2 8 0l-1-4H9z"/>',
+    '谷の若竜': '<path d="M4 18c2-6 5-9 9-9l3-4 1 4 4 1-3 3c0 3-2 6-6 6"/><path d="M8 13l-4-4 6 1"/><circle cx="15" cy="10" r=".8"/><path d="M12 18q2 1 3 0"/>',
+};
+function monsterIcon(name) {
+    return `<svg class="mon-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${MONSTER_ICONS[name] || ''}</svg>`;
+}
 const RIVAL_SCHOOLS = ['北の騎士学院', '湖の魔法学舎', '港町の武術館', '王都の兵学校', '山の修道院'];
 
 // ---------- 戦う者を作る ----------
@@ -89,7 +108,7 @@ function makeRival(day, strength, onlyJobs, rookie) {
     const w = {}; job.favor.forEach(k => { w[k] = 1.35; });
     const line = SKILL_LINES[JOB_LINE[job.key]];
     const skills = rookie ? [] : day > 150 ? line.slice() : line.slice(0, 1);
-    return { name: pick(NAMES), stats: statsFromWeights(rivalLevel(day, rookie) * strength, w), skills, job: job.name };
+    return { name: pick(NAMES), stats: statsFromWeights(rivalLevel(day, rookie) * strength, w), skills, job: job.name, hope: job.key, look: typeof randomLook === 'function' ? randomLook() : null };
 }
 function makeUnit(src, side, idx) {
     const s = src.stats;
@@ -342,7 +361,7 @@ function unitHTML(u, actingUid, hitMap) {
     if (buffVal(u, 'armorDown')) states.push('防御↓');
     if (buffVal(u, 'endure')) states.push('不屈');
     return `<div class="bu ${u.side === 'B' ? 'foe' : ''} ${u.hp <= 0 ? 'down' : ''} ${u.uid === actingUid ? 'acting' : ''}">
-        ${pop}<div class="bu-nm">${u.look && typeof avatarSVG === 'function' ? `<span class="bu-face">${avatarSVG(u.look, u.job, { face: true })}</span>` : ''}<span>${esc(u.name)}</span><small>${esc(u.sub)}</small></div>
+        ${pop}<div class="bu-nm">${u.look && typeof avatarSVG === 'function' ? `<span class="bu-face">${avatarSVG(u.look, u.job, { face: true })}</span>` : MONSTER_ICONS[u.name] ? `<span class="bu-face mon">${monsterIcon(u.name)}</span>` : ''}<span>${esc(u.name)}</span><small>${esc(u.sub)}</small></div>
         <div class="bbar hp"><i style="width:${pct(u.hp / u.maxHp * 100)}"></i></div>
         <div class="bbar mp"><i style="width:${pct(u.mp / u.maxMp * 100)}"></i></div>
         <div class="bbar gg"><i style="width:${pct(u.gauge)}"></i></div>

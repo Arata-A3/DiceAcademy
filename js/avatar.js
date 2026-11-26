@@ -12,6 +12,10 @@ const AVATAR_PARTS = {
         { key: 'round', name: 'まる' }, { key: 'sharp', name: 'つり目' }, { key: 'droopy', name: 'たれ目' }, { key: 'cat', name: 'ねこ目' },
         { key: 'sparkle', name: 'きらきら' }, { key: 'jito', name: 'ジト目' }, { key: 'narrow', name: '細め' }, { key: 'smile', name: 'にっこり' }, { key: 'wink', name: 'ウインク' },
     ],
+    hl: [
+        { key: 'double', name: '大小 2 つ' }, { key: 'big', name: '大きな丸' }, { key: 'wide', name: '横長の丸' }, { key: 'trio', name: '3 つ' },
+        { key: 'star', name: '星' }, { key: 'none', name: 'なし' },
+    ],
     lash: [{ key: 'none', name: 'なし' }, { key: 'lash', name: 'あり' }],
     brow: [{ key: 'normal', name: 'ふつう' }, { key: 'thin', name: '細い' }, { key: 'thick', name: '太い' }, { key: 'angry', name: 'つり眉' }, { key: 'worried', name: '困り眉' }],
     mouth: [
@@ -34,14 +38,28 @@ const AVATAR_COLORS = {
 };
 // 希望の職業ごとの持ち物
 const JOB_ITEM = { warrior: 'sword', knight: 'shield', mage: 'staff', priest: 'book', hunter: 'bow', thief: 'dagger', villager: 'hoe' };
-const LOOK_KEYS = ['hair', 'eyes', 'lash', 'brow', 'mouth', 'outfit', 'acc'];
+const LOOK_KEYS = ['hair', 'eyes', 'hl', 'lash', 'brow', 'mouth', 'outfit', 'acc'];
 const LOOK_COLORS = { hairColor: 'hair', skin: 'skin', eyeColor: 'eye', cloth: 'cloth' };
+// 位置・角度の調整（部品ごと）。min〜max、0 が元の位置。size は %（0 で元の大きさ）
+const LOOK_ADJ = {
+    eyes: [{ key: 'eyeY', name: '上下', min: -6, max: 6 }, { key: 'eyeGap', name: '間隔', min: -6, max: 6 }, { key: 'eyeRot', name: '角度', min: -15, max: 15 }, { key: 'eyeSize', name: '大きさ', min: -20, max: 20 }],
+    brow: [{ key: 'browY', name: '上下', min: -8, max: 6 }, { key: 'browGap', name: '間隔', min: -8, max: 8 }, { key: 'browRot', name: '角度', min: -25, max: 25 }, { key: 'browW', name: '太さ', min: -50, max: 100 }],
+    mouth: [{ key: 'mouthY', name: '上下', min: -5, max: 6 }, { key: 'mouthSize', name: '大きさ', min: -30, max: 40 }],
+    acc: [{ key: 'accX', name: '左右', min: -15, max: 15 }, { key: 'accY', name: '上下', min: -15, max: 15 }, { key: 'accRot', name: '角度', min: -30, max: 30 }, { key: 'accSize', name: '大きさ', min: -30, max: 40 }],
+};
+const LOOK_ADJ_ALL = Object.values(LOOK_ADJ).flat();
+function cleanAdj(a) {
+    const out = {};
+    if (!a || typeof a !== 'object') return out;
+    LOOK_ADJ_ALL.forEach(d => { const v = Number(a[d.key]); if (isFinite(v) && v !== 0) out[d.key] = Math.max(d.min, Math.min(d.max, Math.round(v))); });
+    return out;
+}
 
 function randomLook() {
     const p = arr => arr[Math.floor(Math.random() * arr.length)];
     return {
         hair: p(AVATAR_PARTS.hair).key, eyes: p(AVATAR_PARTS.eyes.slice(0, 7)).key, lash: Math.random() < 0.4 ? 'lash' : 'none',
-        brow: p(AVATAR_PARTS.brow).key, mouth: p(AVATAR_PARTS.mouth.slice(0, 6)).key, outfit: p(AVATAR_PARTS.outfit).key,
+        hl: p(['double', 'double', 'big', 'wide', 'trio']), brow: p(AVATAR_PARTS.brow).key, mouth: p(AVATAR_PARTS.mouth.slice(0, 6)).key, outfit: p(AVATAR_PARTS.outfit).key,
         acc: Math.random() < 0.45 ? 'none' : p(AVATAR_PARTS.acc.slice(1)).key,
         hairColor: p(AVATAR_COLORS.hair), skin: p(AVATAR_COLORS.skin), eyeColor: p(AVATAR_COLORS.eye), cloth: p(AVATAR_COLORS.cloth),
     };
@@ -51,9 +69,11 @@ function cleanLook(l) {
     const d = randomLook();
     if (!l || typeof l !== 'object') return d;
     const out = {};
-    const fallback = { acc: 'none', lash: 'none', brow: 'normal', outfit: 'tunic' };
+    const fallback = { acc: 'none', lash: 'none', brow: 'normal', outfit: 'tunic', hl: 'double' };
     LOOK_KEYS.forEach(k => { out[k] = AVATAR_PARTS[k].some(x => x.key === l[k]) ? l[k] : (fallback[k] || d[k]); });
     Object.keys(LOOK_COLORS).forEach(k => { out[k] = typeof l[k] === 'string' && /^#[0-9a-f]{6}$/i.test(l[k]) ? l[k].toLowerCase() : d[k]; });
+    const adj = cleanAdj(l.adj);
+    if (Object.keys(adj).length) out.adj = adj;
     return out;
 }
 
@@ -101,7 +121,11 @@ function avatarSVG(look, job, opt = {}) {
     const parts = [hairBack(L.hair, c, sw)];
     if (!opt.face) parts.push(bodySVG(L.outfit, c, sw), jobItem(JOB_ITEM[job] || 'hoe', ln));
     if (L.hair === 'braid') parts.push(braidSVG(c, sw));
-    parts.push(faceSVG(L, c, sw, uid), hairFront(L.hair, c, sw), browSVG(L.brow, c), accSVG(L.acc, c, sw));
+    const adj = L.adj || {};
+    const acc = accSVG(L.acc, c, sw);
+    const k = 1 + (adj.accSize || 0) / 100;
+    parts.push(faceSVG(L, c, sw, uid), hairFront(L.hair, c, sw), browSVG(L.brow, c, adj),
+        acc ? `<g transform="translate(${adj.accX || 0} ${adj.accY || 0}) rotate(${adj.accRot || 0} 50 40) translate(50 40) scale(${k}) translate(-50 -40)">${acc}</g>` : '');
     const vb = opt.face ? '10 2 80 84' : '0 0 100 130';
     return `<svg class="avatar" viewBox="${vb}" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${parts.join('')}</svg>`;
 }
@@ -146,28 +170,42 @@ function faceSVG(L, c, sw, uid) {
         <path d="${FACE_PATH}" fill="${c.skin}" ${sw}/>
         <path d="M24 40 Q50 30 76 40 L76 46 Q50 36 24 46 Z" fill="${c.skinS}" opacity=".9"/>
         <ellipse cx="32" cy="63" rx="5.5" ry="2.8" fill="#f2828a" opacity=".38"/><ellipse cx="68" cy="63" rx="5.5" ry="2.8" fill="#f2828a" opacity=".38"/>
-        ${eyesSVG(L.eyes, L.lash === 'lash', c, uid)}
+        ${eyesSVG(L.eyes, L.lash === 'lash', c, uid, L.eyes === 'sparkle' ? 'star' : L.hl, L.adj || {})}
         <path d="M50.5 61 l-1.2 2.2" stroke="${c.skinD}" stroke-width="1.8" stroke-linecap="round"/>
-        ${mouthSVG(L.mouth, c)}`;
+        ${mouthSVG(L.mouth, c, L.adj || {})}`;
 }
 
-function eyesSVG(kind, lash, c, uid) {
+function eyesSVG(kind, lash, c, uid, hl = 'double', adj = {}) {
     const id = `${uid}e`;
     const dark = shade(c.eye, -0.6), light = shade(c.eye, 0.5), ln = c.line;
     const defs = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${dark}"/><stop offset=".5" stop-color="${c.eye}"/><stop offset="1" stop-color="${light}"/></linearGradient></defs>`;
-    const rx = 7.2, ry = 10;
+    const rx = 7.6, ry = 10.4;
+    // ハイライト（瞳の光）
+    const shine = (x, cy) => {
+        const w = '#fff';
+        switch (hl) {
+            case 'big': return `<circle cx="${x - 2.2}" cy="${cy - 3.6}" r="4.2" fill="${w}"/><circle cx="${x + 3.4}" cy="${cy + 4}" r="1.2" fill="${w}" opacity=".9"/>`;
+            case 'wide': return `<ellipse cx="${x - 1.4}" cy="${cy - 4.4}" rx="4.6" ry="2.9" fill="${w}"/>`;
+            case 'trio': return `<ellipse cx="${x - 2.6}" cy="${cy - 4.2}" rx="3" ry="3.6" fill="${w}"/><circle cx="${x + 2.6}" cy="${cy - 5.4}" r="1.3" fill="${w}"/><circle cx="${x + 3.2}" cy="${cy + 4}" r="1.6" fill="${w}" opacity=".9"/>`;
+            case 'star': return `<path d="M${x - 2.2} ${cy - 8} l1.8 3.8 3.8 1.8 -3.8 1.8 -1.8 3.8 -1.8 -3.8 -3.8 -1.8 3.8 -1.8z" fill="${w}"/><path d="M${x + 3.4} ${cy + 2.4} l.9 1.9 1.9.9 -1.9.9 -.9 1.9 -.9 -1.9 -1.9 -.9 1.9 -.9z" fill="${w}"/>`;
+            case 'none': return '';
+            default: return `<ellipse cx="${x - 2.6}" cy="${cy - 4.2}" rx="3.2" ry="3.9" fill="${w}"/><circle cx="${x + 3.2}" cy="${cy + 3.8}" r="1.6" fill="${w}" opacity=".95"/>`;
+        }
+    };
     // 右目（目尻が右）で描き、左目は左右を返す
     const one = (x, flip) => {
         const m = flip ? ` transform="translate(${2 * x} 0) scale(-1 1)"` : '';
         const cy = 53;
-        const iris = `<ellipse cx="${x}" cy="${cy}" rx="${rx + 1.6}" ry="${ry}" fill="#fff"/>
-            <ellipse cx="${x + 0.4}" cy="${cy + 0.6}" rx="${rx}" ry="${ry - 0.6}" fill="url(#${id})"/>
-            <ellipse cx="${x + 0.4}" cy="${cy + 0.6}" rx="${rx}" ry="${ry - 0.6}" fill="none" stroke="${dark}" stroke-width="1.2"/>
-            <ellipse cx="${x + 0.4}" cy="${cy + 1.6}" rx="${rx * 0.42}" ry="${ry * 0.48}" fill="${dark}"/>
-            ${kind === 'sparkle'
-                ? `<path d="M${x - 2.2} ${cy - 7} l1.7 3.6 3.6 1.7 -3.6 1.7 -1.7 3.6 -1.7 -3.6 -3.6 -1.7 3.6 -1.7z" fill="#fff"/><path d="M${x + 3.4} ${cy + 3} l.9 1.9 1.9.9 -1.9.9 -.9 1.9 -.9 -1.9 -1.9 -.9 1.9 -.9z" fill="#fff"/>`
-                : `<ellipse cx="${x - 2.4}" cy="${cy - 4}" rx="2.9" ry="3.6" fill="#fff"/><circle cx="${x + 3}" cy="${cy + 4.2}" r="1.5" fill="#fff" opacity=".95"/>`}
-            <path d="M${x - 4.5} ${cy + ry - 0.3} q4.5 1.6 9 0" fill="none" stroke="${ln}" stroke-width="1.3" stroke-linecap="round" opacity=".55"/>`;
+        const clip = `${id}k${x}`;
+        // 白目は少しだけ見せ、瞳を大きく。瞳の上は影、下は明るい照り返し
+        const iris = `<ellipse cx="${x}" cy="${cy}" rx="${rx + 1.1}" ry="${ry}" fill="#fff"/>
+            <clipPath id="${clip}"><ellipse cx="${x + 0.3}" cy="${cy + 0.5}" rx="${rx}" ry="${ry - 0.5}"/></clipPath>
+            <ellipse cx="${x + 0.3}" cy="${cy + 0.5}" rx="${rx}" ry="${ry - 0.5}" fill="url(#${id})"/>
+            <g clip-path="url(#${clip})"><ellipse cx="${x + 0.3}" cy="${cy - ry * 0.62}" rx="${rx + 2}" ry="${ry * 0.55}" fill="${dark}" opacity=".55"/>
+            <ellipse cx="${x + 0.3}" cy="${cy + ry * 0.62}" rx="${rx * 0.7}" ry="${ry * 0.28}" fill="${light}" opacity=".9"/></g>
+            <ellipse cx="${x + 0.3}" cy="${cy + 0.5}" rx="${rx}" ry="${ry - 0.5}" fill="none" stroke="${dark}" stroke-width="1"/>
+            <ellipse cx="${x + 0.3}" cy="${cy + 1.2}" rx="${rx * 0.34}" ry="${ry * 0.4}" fill="${dark}"/>
+            ${shine(x, cy)}`;
         // まぶた（上の太い線）・二重の線・まつげ
         const lid = (d, crease) => `<path d="${d}" fill="none" stroke="${ln}" stroke-width="3.6" stroke-linecap="round"/>${crease ? `<path d="${crease}" fill="none" stroke="${ln}" stroke-width="1.2" stroke-linecap="round" opacity=".55"/>` : ''}`;
         const lashes = (x0, y0) => lash
@@ -192,14 +230,19 @@ function eyesSVG(kind, lash, c, uid) {
             case 'droopy':
                 return `<g${m}>${iris}${lid(`M${x - 9.5} ${cy - 10} Q${x} ${cy - 13} ${x + 9.5} ${cy - 4}`, `M${x - 7} ${cy - 14} Q${x} ${cy - 16} ${x + 8} ${cy - 10}`)}${lashes(x + 9.2, cy - 4.4)}</g>`;
             default:
-                return `<g${m}>${iris}${lid(`M${x - 9.5} ${cy - 5} Q${x - 1} ${cy - 13.5} ${x + 9.5} ${cy - 8}`, `M${x - 7} ${cy - 12.5} Q${x} ${cy - 16} ${x + 8} ${cy - 12}`)}${lashes(x + 9, cy - 8)}</g>`;
+                return `<g${m}>${iris}${lid(`M${x - 9.5} ${cy - 6} Q${x} ${cy - 14} ${x + 9.8} ${cy - 6.5}`, `M${x - 7} ${cy - 13} Q${x} ${cy - 16.5} ${x + 8} ${cy - 12.5}`)}${lashes(x + 9.2, cy - 6.8)}</g>`;
         }
     };
-    return defs + one(36, true) + one(64, false);
+    // 調整: 上下・間隔・角度・大きさ（左目は左右を返す）
+    const place = (x, flip, body) => {
+        const dx = (flip ? -1 : 1) * (adj.eyeGap || 0) / 2, r = (flip ? -1 : 1) * (adj.eyeRot || 0), k = 1 + (adj.eyeSize || 0) / 100;
+        return `<g transform="translate(${dx} ${adj.eyeY || 0}) rotate(${r} ${x} 53) translate(${x} 53) scale(${k}) translate(${-x} -53)">${body}</g>`;
+    };
+    return defs + place(36, true, one(36, true)) + place(64, false, one(64, false));
 }
 // 眉（右目の上で描き、左は左右を返す。前髪の上に少し透けて見える）
-function browSVG(kind, c) {
-    const w = kind === 'thick' ? 2.8 : kind === 'thin' ? 1.1 : 1.6;
+function browSVG(kind, c, adj = {}) {
+    const w = (kind === 'thick' ? 2.8 : kind === 'thin' ? 1.1 : 1.6) * (1 + (adj.browW || 0) / 100);
     const one = (x, flip) => {
         const m = flip ? ` transform="translate(${2 * x} 0) scale(-1 1)"` : '';
         const d = kind === 'angry' ? `M${x - 7} 39 Q${x} 36 ${x + 8} 34.5`
@@ -208,14 +251,22 @@ function browSVG(kind, c) {
         return `<path d="${d}" fill="none" stroke="${c.hairD}" stroke-width="${w + 1.2}" stroke-linecap="round" opacity=".5"/><path d="${d}" fill="none" stroke="${shade(c.hairD, -0.35)}" stroke-width="${w}" stroke-linecap="round"${m}/>`
             .replace('opacity=".5"/>', `opacity=".5"${m}/>`);
     };
-    return one(36, true) + one(64, false);
+    const place = (x, flip) => {
+        const dx = (flip ? -1 : 1) * (adj.browGap || 0) / 2, r = (flip ? -1 : 1) * (adj.browRot || 0);
+        return `<g transform="translate(${dx} ${adj.browY || 0}) rotate(${r} ${x} 36.5)">${one(x, flip)}</g>`;
+    };
+    return place(36, true) + place(64, false);
 }
 function braidSVG(c, sw) {
     const knots = [86, 96, 106].map(y => `<ellipse cx="${74 + (y - 86) * 0.15}" cy="${y}" rx="6" ry="6" fill="${c.hair}" ${sw}/><path d="M${69 + (y - 86) * 0.15} ${y - 2} Q${74} ${y + 3} ${79 + (y - 86) * 0.15} ${y - 2}" fill="none" stroke="${c.hairD}" stroke-width="1.4"/>`).join('');
     return `<path d="M70 60 Q76 70 74 82" fill="none" stroke="${c.line}" stroke-width="8" stroke-linecap="round"/><path d="M70 60 Q76 70 74 82" fill="none" stroke="${c.hair}" stroke-width="5" stroke-linecap="round"/>${knots}
         <path d="M74 112 L72 120 M76 112 L78 120 M75 112 L75 121" stroke="${c.hairD}" stroke-width="2" stroke-linecap="round"/><circle cx="75" cy="112" r="2.6" fill="#e0506a" stroke="${c.line}" stroke-width="1.2"/>`;
 }
-function mouthSVG(kind, c) {
+function mouthSVG(kind, c, adj = {}) {
+    const k = 1 + (adj.mouthSize || 0) / 100;
+    return `<g transform="translate(0 ${adj.mouthY || 0}) translate(50 68) scale(${k}) translate(-50 -68)">${mouthShape(kind, c)}</g>`;
+}
+function mouthShape(kind, c) {
     const ln = c.line;
     switch (kind) {
         case 'open': return `<path d="M45 67 Q50 76 55 67 Z" fill="#b8424e" stroke="${ln}" stroke-width="1.8" stroke-linejoin="round"/><path d="M47 71.5 Q50 74.5 53 71.5" fill="#f08a8a"/>`;

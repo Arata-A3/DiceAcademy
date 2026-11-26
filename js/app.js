@@ -285,7 +285,7 @@ function makeDefaultGame() {
     return {
         saveVersion: SAVE_VERSION, appearance: 'auto',
         year: 1, day: 0, fame: 50, gold: 100,
-        board: null, hand: [], specials: [], students: [], nextId: 1, alumni: [], records: [], quest: null, questCount: 0, facilities: {},
+        board: null, hand: [], specials: [], students: [], nextId: 1, alumni: [], records: [], quest: null, questCount: 0, facilities: {}, schoolName: SCHOOL_NAME,
         message: '', pending: null, lastVersion: APP_VERSION, lastParty: [], lastTactic: 'balance', lastMode: 'stat',
     };
 }
@@ -1066,7 +1066,7 @@ function finishGraduation() {
         game.pending.nextPending = {
             kind: 'notice', title: '初めての勇者', hero: true, nextPending: after,
             html: `<p class="hero-big">${esc(a.name)} が勇者に認定された</p>
-                <p>ダイスアカデミーから、初めての勇者が生まれた。開校から ${game.year} 年目のことだった。</p>
+                <p>${esc(schoolName())}から、初めての勇者が生まれた。開校から ${game.year} 年目のことだった。</p>
                 <table class="tbl"><tr><th>職業</th><td>${JOB_BY_KEY[a.job].name}</td></tr><tr><th>名声</th><td>${fmtRenown(a.renown)}</td></tr>
                 <tr><th>総合力</th><td>${a.power}（${RANK_NAMES[a.rank]}）</td></tr><tr><th>大会の優勝</th><td>${a.titles} 回</td></tr><tr><th>大会の勝ち</th><td>${a.wins}</td></tr></table>
                 <p class="muted">学園の歴史と英傑録に残る。このまま次の年も続けられる。</p>`,
@@ -1158,7 +1158,7 @@ function openAlumni(tab = 'roster') {
         : `<p class="muted">まだ誰も載っていない。名声 ＋ 総合力が ${ROSTER_SUM} 以上で卒業すると載る。</p>`;
     const seg = (k, l) => `<button class="seg ${tab === k ? 'on' : ''}" data-tab="${k}" aria-pressed="${tab === k}">${l}</button>`;
     showDialog({
-        title: '学園の歴史', wide: true,
+        title: `${schoolName()}の歴史`, wide: true,
         body: `<div class="segs">${seg('roster', '英傑録')}${seg('years', '年ごとの記録')}</div><div class="hist-body">${tab === 'roster'
             ? `<p class="muted">名声 ＋ 総合力が ${ROSTER_SUM} 以上の卒業生が載り、職業は上位の名で呼ばれる（${JOBS.map(j => `${j.name} → ${ELITE_NAMES[j.key]}`).join('、')}、村人 → ${ELITE_NAMES.villager}）。名声 ＋ 総合力が ${HERO_SUM} 以上で卒業すると勇者になる。英傑録の卒業生は、魔物討伐の助っ人に呼べる（卒業から ${HELPER_RETIRE} 年で引退）。</p>${roster}`
             : yearly}</div>
@@ -1215,7 +1215,8 @@ function openSettings() {
     const opt = (v, l) => `<button class="seg ${game.appearance === v ? 'on' : ''}" data-ap="${v}" aria-pressed="${game.appearance === v}">${l}</button>`;
     showDialog({
         title: '設定',
-        body: `<p>明るさ</p><div class="segs">${opt('auto', '端末に合わせる')}${opt('light', 'ライト')}${opt('dark', 'ダーク')}</div>
+        body: `<p>学園の名前</p><div class="school-name"><input id="school-name" type="text" maxlength="12" value="${esc(schoolName())}" autocomplete="off"><button class="btn" id="school-save">変える</button></div>
+            <p style="margin-top:14px">明るさ</p><div class="segs">${opt('auto', '端末に合わせる')}${opt('light', 'ライト')}${opt('dark', 'ダーク')}</div>
             <p style="margin-top:18px">データ</p>
             <div class="file-btns"><button class="btn" id="save-export">${icon('download')}セーブを書き出す</button><button class="btn" id="save-import">${icon('upload')}セーブを読み込む</button></div>
             <p class="muted">書き出したファイルはバックアップになる。読み込むと今のデータは置き換わる。</p>
@@ -1226,6 +1227,11 @@ function openSettings() {
                 ui.dlgBody.querySelectorAll('.seg').forEach(e2 => { const on = e2.dataset.ap === game.appearance; e2.classList.toggle('on', on); e2.setAttribute('aria-pressed', on); });
             }));
             $('reset-btn').addEventListener('click', fullReset);
+            $('school-save').addEventListener('click', () => {
+                const v = $('school-name').value.trim().slice(0, 12);
+                if (!v) { toast('名前を入れてください'); return; }
+                game.schoolName = v; saveGame(); render(); toast(`学園の名前を「${v}」にした`);
+            });
             $('save-export').addEventListener('click', exportSave);
             $('save-import').addEventListener('click', () => pickFile(importSave));
         },
@@ -1373,11 +1379,11 @@ function exportRoster() {
         return {
             uid: a.uid, name: a.name, job: a.job, hope: a.hope, tier: a.tier, renown: a.renown, power: a.power, rank: a.rank, look: a.look,
             titles: a.titles || 0, wins: a.wins || 0, helped: a.helped || 0, skills: a.skills, stats: a.stats, gradStats: a.gradStats || a.stats,
-            yearsSince: game.year - a.year, school: a.imported ? a.school : SCHOOL_NAME,
+            yearsSince: game.year - a.year, school: a.imported ? a.school : schoolName(),
         };
     });
     saveGame();
-    downloadJSON({ format: ROSTER_FORMAT, version: ROSTER_FORMAT_VERSION, exportedAt: new Date().toISOString(), school: SCHOOL_NAME, members }, `diceacademy-eiketsuroku-${todayStamp()}.json`);
+    downloadJSON({ format: ROSTER_FORMAT, version: ROSTER_FORMAT_VERSION, exportedAt: new Date().toISOString(), school: schoolName(), members }, `diceacademy-eiketsuroku-${todayStamp()}.json`);
     toast(`英傑録の ${members.length} 人を書き出した`);
 }
 // 読み込んだ値を確かめる（形が違えば null）
@@ -1432,6 +1438,7 @@ function migrateTo10() {
     game.alumni.forEach(a => { a.look = cleanLook(a.look); });
 }
 // ---------- キャラメイク ----------
+function schoolName() { return game.schoolName || SCHOOL_NAME; }
 function faceOf(s, job) { return avatarSVG(s.look, job || s.hope, { face: true }); }
 // 入学式のあと、新入生の見た目を順に作る
 function openLookQueue() {
@@ -1445,7 +1452,7 @@ function openLookQueue() {
     });
 }
 const LOOK_TABS = [
-    { key: 'hair', name: '髪型' }, { key: 'hairColor', name: '髪の色', color: 'hair' }, { key: 'eyes', name: '目' }, { key: 'eyeColor', name: '目の色', color: 'eye' },
+    { key: 'hair', name: '髪型' }, { key: 'hairColor', name: '髪の色', color: 'hair' }, { key: 'eyes', name: '目' }, { key: 'eyeColor', name: '目の色', color: 'eye' }, { key: 'hl', name: 'ハイライト' },
     { key: 'lash', name: 'まつげ' }, { key: 'brow', name: '眉' }, { key: 'mouth', name: '口' }, { key: 'skin', name: '肌の色', color: 'skin' },
     { key: 'outfit', name: '服' }, { key: 'cloth', name: '服の色', color: 'cloth' }, { key: 'acc', name: '飾り' },
 ];
@@ -1471,12 +1478,22 @@ function openLookMaker(id, done, opt = {}) {
                 <label>鮮やかさ<input type="range" min="0" max="100" value="${hsl.s}" data-hsl="s"><b>${hsl.s}%</b></label>
                 <label>明るさ<input type="range" min="5" max="95" value="${hsl.l}" data-hsl="l"><b>${hsl.l}%</b></label></div>`;
         } else {
-            html = `<div class="look-opts">${AVATAR_PARTS[tab].map(o => `<button class="look-opt ${o.key === look[tab] ? 'on' : ''}" data-part="${o.key}" aria-pressed="${o.key === look[tab]}">${preview({ ...look, [tab]: o.key }, tab)}<small>${o.name}</small></button>`).join('')}</div>`;
+            html = (LOOK_ADJ[tab] ? adjHTML(tab) : '') + `<div class="look-opts">${AVATAR_PARTS[tab].map(o => `<button class="look-opt ${o.key === look[tab] ? 'on' : ''}" data-part="${o.key}" aria-pressed="${o.key === look[tab]}">${preview({ ...look, [tab]: o.key }, tab)}<small>${o.name}</small></button>`).join('')}</div>`;
         }
         $('look-body').innerHTML = html;
         ui.dlgBody.querySelectorAll('.look-tab').forEach(b => { const on = b.dataset.tab === tab; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
         $('look-body').querySelectorAll('[data-part]').forEach(b => b.addEventListener('click', () => { look[tab] = b.dataset.part; draw(); }));
         $('look-body').querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => { look[tab] = b.dataset.color; draw(); }));
+        $('look-body').querySelectorAll('[data-adj]').forEach(r => {
+            r.addEventListener('input', () => {
+                const a = Object.assign({}, look.adj); a[r.dataset.adj] = Number(r.value); look.adj = cleanAdj(a);
+                r.nextElementSibling.textContent = r.value;
+                $('look-av').innerHTML = avatarSVG(look, s.hope);
+            });
+            r.addEventListener('change', draw);
+        });
+        const ar = $('adj-reset');
+        if (ar) ar.addEventListener('click', () => { const a = Object.assign({}, look.adj); LOOK_ADJ[tab].forEach(d => { delete a[d.key]; }); look.adj = cleanAdj(a); draw(); });
         $('look-body').querySelectorAll('[data-hsl]').forEach(r => {
             r.addEventListener('input', () => {
                 const v = {}; $('look-body').querySelectorAll('[data-hsl]').forEach(x => { v[x.dataset.hsl] = Number(x.value); x.nextElementSibling.textContent = `${x.value}${x.dataset.hsl === 'h' ? '°' : '%'}`; });
@@ -1486,7 +1503,15 @@ function openLookMaker(id, done, opt = {}) {
             r.addEventListener('change', draw);
         });
     };
-    const finish = () => { s.look = cleanLook(look); saveGame(); done(); };
+    const adjHTML = t => `<div class="look-adj"><div class="adj-head"><span>位置の調整</span><button class="btn ghost small" id="adj-reset">調整を戻す</button></div>${LOOK_ADJ[t].map(d => {
+        const v = (look.adj && look.adj[d.key]) || 0;
+        return `<label>${d.name}<input type="range" min="${d.min}" max="${d.max}" step="1" value="${v}" data-adj="${d.key}"><b>${v}</b></label>`;
+    }).join('')}</div>`;
+    const finish = () => {
+        const nm = ($('look-name').value || '').trim().slice(0, 8);
+        if (nm) s.name = nm;
+        s.look = cleanLook(look); saveGame(); done();
+    };
     const buttons = [
         { label: `${icon('dice')}おまかせ`, keepOpen: true, onClick: () => { look = randomLook(); draw(); } },
         { label: '最初に戻す', keepOpen: true, onClick: () => { look = cleanLook(JSON.parse(start)); draw(); } },
@@ -1495,7 +1520,7 @@ function openLookMaker(id, done, opt = {}) {
     buttons.push({ label: opt.rest > 0 ? '決めて次の生徒へ' : '決める', primary: true, onClick: finish });
     showDialog({
         title: `${s.name} の見た目`, wide: true,
-        body: `<div class="look"><div class="look-left"><div id="look-av" class="look-av"></div><p class="muted">${s.grade}年・希望: ${JOB_BY_KEY[s.hope].name}（持ち物は希望の職業で決まる）</p></div>
+        body: `<div class="look"><div class="look-left"><div id="look-av" class="look-av"></div><div class="look-meta"><label class="look-name">名前 <input id="look-name" type="text" maxlength="8" value="${esc(s.name)}" autocomplete="off"></label><p class="muted">${s.grade}年・希望: ${JOB_BY_KEY[s.hope].name}（持ち物は希望の職業で決まる）</p></div></div>
             <div class="look-right"><div class="look-tabs">${LOOK_TABS.map(t => `<button class="look-tab" data-tab="${t.key}" aria-pressed="false">${t.name}</button>`).join('')}</div><div id="look-body"></div></div></div>`,
         buttons,
         onOpen: () => {

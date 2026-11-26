@@ -153,6 +153,31 @@ await test('入学式のあとに新入生の見た目を作り、一覧・生�
     assert(r.cards === r.n && r.big && r.faces >= 1, JSON.stringify(r));
 });
 
+await test('キャラメイクで名前と位置の調整を変え、設定で学園の名前を変えられる', async () => {
+    await open();
+    const r = await evaluate(`${HELPERS}
+        clickMain();
+        const id = game.pending.queue[0];
+        $('look-name').value = 'テスト太郎';
+        ui.dlgBody.querySelector('.look-tab[data-tab="eyes"]').click();
+        const a = ui.dlgBody.querySelector('[data-adj="eyeRot"]'); a.value = 9; a.dispatchEvent(new Event('input')); a.dispatchEvent(new Event('change'));
+        ui.dlgBody.querySelector('.look-tab[data-tab="acc"]').click();
+        const b = ui.dlgBody.querySelector('[data-adj="accY"]'); b.value = -20; b.dispatchEvent(new Event('input')); b.dispatchEvent(new Event('change'));
+        ui.dlgBody.querySelector('.look-tab[data-tab="hl"]').click();
+        ui.dlgBody.querySelector('[data-part="wide"]').click();
+        [...ui.dlgButtons.querySelectorAll('button')].find(x => x.textContent.includes('決めて')).click();
+        const s = game.students.find(x => x.id === id);
+        closeDialog(); game.pending = null; openSettings();
+        $('school-name').value = '北風学園'; $('school-save').click(); closeDialog();
+        openAlumni(); const title = ui.dlgTitle.textContent; closeDialog();
+        const rival = makeRival(100, 1, null, false);
+        return { name: s.name, adj: s.look.adj, hl: s.look.hl, school: game.schoolName, title, rivalLook: !!rival.look, icons: Object.keys(MONSTER_ICONS).length };`);
+    assert(r.name === 'テスト太郎', `名前 ${r.name}`);
+    assert(r.adj && r.adj.eyeRot === 9 && r.adj.accY === -15 && r.hl === 'wide', `調整 ${JSON.stringify(r)}`);
+    assert(r.school === '北風学園' && r.title === '北風学園の歴史', JSON.stringify(r));
+    assert(r.rivalLook && r.icons >= 13, JSON.stringify(r));
+});
+
 await test('練習で指導でき、指導の人数は在校生 3 人に 1 人', async () => {
     await open();
     const r = await evaluate(`${HELPERS} clickMain(); closeDialog(); game.pending = null;
