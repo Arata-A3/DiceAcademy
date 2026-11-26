@@ -96,7 +96,7 @@ function makeUnit(src, side, idx) {
     const maxHp = Math.round(80 + s.hp * 2.5);
     const maxMp = Math.round(20 + s.mp);
     return {
-        uid: `${side}${idx}`, side, name: src.name, sub: src.sub || '', studentId: src.id || null,
+        uid: `${side}${idx}`, side, name: src.name, sub: src.sub || '', studentId: src.id || null, look: src.look || null, job: src.hope || src.job || null,
         stats: s, maxHp, hp: maxHp, maxMp, mp: maxMp,
         skills: (src.skills || []).map(id => ({ id, cd: 0 })),
         gauge: clamp(s.mspd * 0.35, 0, 80) + Math.random() * 15,
@@ -342,7 +342,7 @@ function unitHTML(u, actingUid, hitMap) {
     if (buffVal(u, 'armorDown')) states.push('防御↓');
     if (buffVal(u, 'endure')) states.push('不屈');
     return `<div class="bu ${u.side === 'B' ? 'foe' : ''} ${u.hp <= 0 ? 'down' : ''} ${u.uid === actingUid ? 'acting' : ''}">
-        ${pop}<div class="bu-nm"><span>${esc(u.name)}</span><small>${esc(u.sub)}</small></div>
+        ${pop}<div class="bu-nm">${u.look && typeof avatarSVG === 'function' ? `<span class="bu-face">${avatarSVG(u.look, u.job, { face: true })}</span>` : ''}<span>${esc(u.name)}</span><small>${esc(u.sub)}</small></div>
         <div class="bbar hp"><i style="width:${pct(u.hp / u.maxHp * 100)}"></i></div>
         <div class="bbar mp"><i style="width:${pct(u.mp / u.maxMp * 100)}"></i></div>
         <div class="bbar gg"><i style="width:${pct(u.gauge)}"></i></div>

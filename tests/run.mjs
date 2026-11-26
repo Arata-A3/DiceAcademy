@@ -95,6 +95,8 @@ const HELPERS = `
     const goTo = i => { closeDialog(); game.pending = null; game.day = i - 1; game.hand = [1, 1, 1]; playHand(0); };
     const goEvent = key => { const f = FIXED_EVENTS.find(x => x.key === key); goTo(dayIndexOf(f.month, f.day)); };
     const strong = (s, years) => { STATS.forEach(st => { s.stats[st.key] = st.base + st.growth * years; }); };
+    // 分かれ道でも行事でもない日（from 以降）
+    const plainDay = from => { let i = from; while (branchAt(i) || game.board.days[i].type === 'fixed') i++; return i; };
 `;
 
 await test('版の表示と読み込みの ?v= が APP_VERSION とそろっている', async () => {
@@ -111,7 +113,7 @@ await test('版の表示と読み込みの ?v= が APP_VERSION とそろって�
 
 await test('画面とコードに絵文字がない', async () => {
     await open();
-    const files = ['index.html', 'js/app.js', 'js/data.js', 'js/battle.js', 'js/version.js', 'css/style.css'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'));
+    const files = ['index.html', 'js/app.js', 'js/data.js', 'js/battle.js', 'js/avatar.js', 'js/version.js', 'css/style.css'].map(f => fs.readFileSync(path.join(ROOT, f), 'utf8'));
     const text = await evaluate('return document.body.innerText;');
     const found = [...new Set([text, ...files].join('').match(/\p{Extended_Pictographic}/gu) || [])];
     assert(!found.length, `見つかった: ${found.join(' ')}`);
@@ -124,6 +126,31 @@ await test('新しいゲームは入学式の 1 年生だけで始まり、行�
     assert(r.grades.length >= 2 && r.grades.every(g => g === 1), `学年 ${r.grades}`);
     assert(r.fixed, '行事の日が暦にない');
     assert(!r.branchOnFixed, '分かれ道が行事の日に重なっている');
+});
+
+await test('入学式のあとに新入生の見た目を作り、一覧・生徒の画面・戦いに顔が出る', async () => {
+    await open();
+    const r = await evaluate(`${HELPERS}
+        clickMain();
+        const first = ui.dlgTitle.textContent;
+        ui.dlgBody.querySelector('.look-tab[data-tab="hair"]').click();
+        ui.dlgBody.querySelector('[data-part="braid"]').click();
+        ui.dlgBody.querySelector('.look-tab[data-tab="cloth"]').click();
+        const sl = ui.dlgBody.querySelector('[data-hsl="l"]'); sl.value = 30; sl.dispatchEvent(new Event('input')); sl.dispatchEvent(new Event('change'));
+        const id = game.pending.queue[0];
+        [...ui.dlgButtons.querySelectorAll('button')].find(b => b.textContent.includes('決めて')).click();
+        const s = game.students.find(x => x.id === id);
+        const second = ui.dlgTitle.textContent;
+        [...ui.dlgButtons.querySelectorAll('button')].find(b => b.textContent.includes('おまかせ') && !b.textContent.includes('残り')).click();
+        clickMain();
+        const cards = document.querySelectorAll('.stu .face svg').length;
+        openStudent(id); const big = !!ui.dlgBody.querySelector('.stu-av svg'); closeDialog();
+        game.pending = { kind: 'battle', mode: 'small' }; render(); $('fight-go').click();
+        const faces = document.querySelectorAll('#b-allies .bu-face svg').length; skipBattle(); document.querySelector('#b-result button').click();
+        return { first, second, hair: s.look.hair, cloth: s.look.cloth, after: game.pending, cards, big, faces, n: game.students.length };`);
+    assert(r.first.endsWith('の見た目') && r.second.endsWith('の見た目'), `${r.first} / ${r.second}`);
+    assert(r.hair === 'braid' && /^#[0-9a-f]{6}$/.test(r.cloth), JSON.stringify(r));
+    assert(r.cards === r.n && r.big && r.faces >= 1, JSON.stringify(r));
 });
 
 await test('練習で指導でき、指導の人数は在校生 3 人に 1 人', async () => {
@@ -203,7 +230,7 @@ await test('討伐の依頼を受けて助っ人と戦い、期限切れでは�
         game.alumni.push({ id: 900, uid: 'h1', name: '先輩', year: 1, job: 'warrior', hope: 'warrior', tier: 'elite', renown: 100, power: 250, rank: 2, titles: 0, wins: 0, helped: 0, stats: st, gradStats: { ...st }, skills: [] });
         game.students.forEach(s => strong(s, 3));
         const keep = Math.random;
-        game.day = 10; game.board.days[10] = { type: 'event' }; Math.random = () => 0.01; resolveSquare(1); Math.random = keep;
+        const d1 = plainDay(10); game.day = d1; game.board.days[d1] = { type: 'event' }; Math.random = () => 0.01; resolveSquare(1); Math.random = keep;
         const offered = game.pending && game.pending.kind === 'questOffer';
         [...ui.dlgButtons.querySelectorAll('button')].find(x => x.textContent.includes('引き受ける')).click();
         const squares = game.board.days.filter(d => d.type === 'quest').length;
@@ -213,7 +240,8 @@ await test('討伐の依頼を受けて助っ人と戦い、期限切れでは�
         const allies = battle.allies.length; skipBattle(); document.querySelector('#b-result button').click();
         const done = { quest: game.quest, left: game.board.days.filter(d => d.type === 'quest').length };
         clickMain();
-        game.questCount = 0; game.day = 100; game.board.days[100] = { type: 'event' }; Math.random = () => 0.01; resolveSquare(1); Math.random = keep;
+        game.questCount = 0; const d2 = plainDay(100); game.day = d2; game.board.days[d2] = { type: 'event' }; Math.random = () => 0.01; resolveSquare(1); Math.random = keep;
+        if (!game.pending || game.pending.kind !== 'questOffer') throw new Error('2 回目の依頼が出ない: ' + JSON.stringify(game.pending) + ' quest=' + JSON.stringify(game.quest));
         [...ui.dlgButtons.querySelectorAll('button')].find(x => x.textContent.includes('引き受ける')).click();
         const fame0 = game.fame; goTo(game.quest.deadline + 1);
         return { offered, squares, allies, done, expired: game.quest === null, fameDown: fame0 - game.fame, left2: game.board.days.filter(d => d.type === 'quest').length };`);
