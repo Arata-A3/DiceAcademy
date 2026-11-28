@@ -6,8 +6,9 @@ const CORE = ['./', 'index.html', 'css/style.css', 'js/version.js', 'js/data.js'
 self.addEventListener('install', e => {
     e.waitUntil(caches.open(CACHE).then(c => c.addAll(CORE.map(u => new Request(u, { cache: 'no-cache' })))).then(() => self.skipWaiting()));
 });
+// 同じドメイン（arata-a3.github.io）のほかのアプリや PPP と保存場所を共有しているので、自分の名前で始まる古い保存だけを消す
 self.addEventListener('activate', e => {
-    e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+    e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.startsWith('diceacademy-') && k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', e => {
     const req = e.request;
